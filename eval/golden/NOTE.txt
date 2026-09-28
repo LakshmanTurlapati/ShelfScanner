@@ -1,0 +1,1 @@
+Real labeled shelf photos are still needed. Put each photo beside a JSON file of the true titles and authors, left to right per row. Do not invent a golden set.
