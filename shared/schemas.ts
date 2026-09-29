@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { GENRES } from "./types.ts";
 
-export const Spine = z.strictObject({
+const spineText = {
   shelf_row: z.int().min(1),
   position: z.int().min(1),
   spine_text: z.string(),
@@ -11,9 +11,24 @@ export const Spine = z.strictObject({
   confidence: z.number().min(0).max(1),
   call_number: z.string().nullable(),
   sticker: z.string().nullable(),
+};
+
+export const Spine = z.strictObject({
+  ...spineText,
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+});
+
+export const TextSpine = z.strictObject({
+  ...spineText,
+  cx: z.number(),
+  cy: z.number(),
 });
 
 export const Spines = z.strictObject({ spines: z.array(Spine) });
+export const TextSpines = z.strictObject({ spines: z.array(TextSpine) });
 
 export const BookFacts = z.strictObject({
   matched: z.boolean(),
@@ -32,6 +47,7 @@ export const BookFacts = z.strictObject({
 });
 
 export type SpineInput = z.infer<typeof Spine>;
+export type TextSpineInput = z.infer<typeof TextSpine>;
 export type BookFactsInput = z.infer<typeof BookFacts>;
 
 function asObjectSchema(schema: Record<string, unknown>): Record<string, unknown> {
@@ -61,4 +77,5 @@ export function responseSchema(type: z.ZodType) {
 }
 
 export const SPINES_JSON_SCHEMA = responseSchema(Spines);
+export const TEXT_SPINES_JSON_SCHEMA = responseSchema(TextSpines);
 export const BOOK_JSON_SCHEMA = responseSchema(BookFacts);

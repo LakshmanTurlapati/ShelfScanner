@@ -6,7 +6,9 @@ import { nearest } from "./pipeline/graph";
 import { genreSections, topRated, withScores } from "./pipeline/score";
 import { enrichOne, scanPhotos } from "./scan";
 import { currentSession, useShelf } from "./store";
+import { CameraScan } from "./CameraScan";
 import { MapView } from "./MapView";
+import { StillCallouts } from "./StillCallouts";
 
 const TABS = [
   ["shelf", "Shelf"],
@@ -15,40 +17,33 @@ const TABS = [
   ["map", "Map"],
 ] as const;
 
-function accessCode() {
-  return sessionStorage.getItem("shelf-access-code") ?? "";
-}
-
 export function App() {
   const shelf = useShelf();
   const session = currentSession(shelf);
   const books = useMemo(() => withScores(session?.books ?? []), [session?.books]);
-  const [code, setCode] = useState(accessCode);
   const [drawer, setDrawer] = useState(false);
   const [editing, setEditing] = useState<Book | null>(null);
   const [question, setQuestion] = useState("");
   const [rawOrder, setRawOrder] = useState(false);
   const [notice, setNotice] = useState("");
+  const [live, setLive] = useState(true);
+  const [stillUrl, setStillUrl] = useState<string | null>(null);
 
   useEffect(() => {
     void shelf.hydrate();
   }, [shelf.hydrate]);
 
-  function saveCode(value: string) {
-    setCode(value);
-    sessionStorage.setItem("shelf-access-code", value);
-  }
-
   async function onFiles(list: FileList | File[]) {
     const files = [...list].filter((file) => file.type.startsWith("image/") || /\.(jpe?g|png|heic|webp)$/i.test(file.name));
     if (!files.length) return;
-    if (!code.trim()) {
-      setNotice("Enter the access code first.");
-      return;
-    }
+    setStillUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return files.length === 1 ? URL.createObjectURL(files[0]) : null;
+    });
+    setLive(false);
     setNotice("");
     try {
-      await scanPhotos(files, code.trim());
+      await scanPhotos(files);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "The scan failed.");
     }
@@ -60,7 +55,7 @@ export function App() {
     shelf.setAsking(true);
     shelf.setAnswer("");
     try {
-      await askShelf(question.trim(), books, code.trim(), (chunk) => {
+      await askShelf(question.trim(), books, (chunk) => {
         shelf.setAnswer(useShelf.getState().answer + chunk);
       });
     } catch (err) {
@@ -87,16 +82,14 @@ export function App() {
         </button>
       </header>
 
-      <label className="mb-3 block text-sm">
-        Access code
-        <input
-          aria-label="Access code"
-          className="mt-1 w-full rounded-xl border border-[#d9d0c2] bg-white px-3 py-2"
-          value={code}
-          onChange={(event) => saveCode(event.target.value)}
-          autoComplete="off"
-        />
-      </label>
+      <button
+        className="fixed right-4 top-4 z-50 rounded-full bg-[#1c1915] px-3 py-1 text-sm text-[#f3ecdf]"
+        type="button"
+        aria-pressed={live}
+        onClick={() => setLive((on) => !on)}
+      >
+        {live ? "Live view on" : "Live view"}
+      </button>
 
       {!session && (
         <Capture notice={notice} onFiles={onFiles} />
@@ -122,10 +115,12 @@ export function App() {
             <Capture notice={notice} compact onFiles={onFiles} />
           </div>
 
+          {shelf.tab === "shelf" && stillUrl && books.some((book) => book.box) && <StillCallouts url={stillUrl} books={books} />}
+
           {shelf.tab === "shelf" && (
             <ul className="space-y-3">
               {books.map((book) => (
-                <BookCard key={book.key} book={book} onEdit={() => setEditing(book)} onRetry={() => void enrichOne(book.key, book.detections[0]?.title ?? book.key, book.detections[0]?.author ?? null, code.trim())} />
+                <BookCard key={book.key} book={book} onEdit={() => setEditing(book)} onRetry={() => void enrichOne(book.key, book.detections[0]?.title ?? book.key, book.detections[0]?.author ?? null)} />
               ))}
             </ul>
           )}
@@ -205,12 +200,14 @@ export function App() {
         </aside>
       )}
 
+      {live && <CameraScan />}
+
       {editing && (
         <EditDialog
           book={editing}
           onClose={() => setEditing(null)}
           onSave={async (title, author) => {
-            await enrichOne(editing.key, title, author, code.trim());
+            await enrichOne(editing.key, title, author);
             setEditing(null);
           }}
         />
@@ -221,8 +218,8 @@ export function App() {
 
 function Capture({ onFiles, notice, compact = false }: { onFiles: (files: FileList | File[]) => void; notice: string; compact?: boolean }) {
   return (
-    <label
-      className={`block rounded-2xl border border-dashed border-[#b7ab99] bg-white/70 p-4 ${compact ? "" : "py-10 text-center"}`}
+    <div
+      className={`rounded-2xl border border-dashed border-[#b7ab99] bg-white/70 p-4 ${compact ? "" : "py-10 text-center"}`}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
@@ -231,17 +228,20 @@ function Capture({ onFiles, notice, compact = false }: { onFiles: (files: FileLi
     >
       <span className="serif block text-lg">{compact ? "Add another photo" : "Photograph a shelf"}</span>
       <span className="mt-1 block text-sm text-[#6d6458]">Straight on, one or two rows, no glare.</span>
-      <input
-        aria-label="Shelf photo"
-        className="mt-3 block w-full text-sm"
-        type="file"
-        accept="image/*"
-        capture="environment"
-        multiple
-        onChange={(event) => event.target.files && onFiles(event.target.files)}
-      />
+      <label className="mt-3 block text-sm">
+        Shelf photo
+        <input
+          aria-label="Shelf photo"
+          className="mt-1 block w-full"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          multiple
+          onChange={(event) => event.target.files && onFiles(event.target.files)}
+        />
+      </label>
       {notice && <p className="mt-2 text-sm text-[#8a3b2c]">{notice}</p>}
-    </label>
+    </div>
   );
 }
 
@@ -252,7 +252,7 @@ function BookCard({ book, onEdit, onRetry }: { book: Book; onEdit: () => void; o
     <li className="rounded-2xl bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="serif text-xl leading-tight">{book.status === "queued" || book.status === "enriching" ? "…" : title}</h2>
+          <h2 className="serif text-xl leading-tight">{book.mark ? `${book.mark} ` : ""}{book.status === "queued" || book.status === "enriching" ? "…" : title}</h2>
           <p className="text-sm text-[#6d6458]">{book.authors.join(", ") || (book.status === "enriching" ? "Looking it up" : "Author unknown")}</p>
         </div>
         {book.avgRating != null && <span className="text-sm">{book.avgRating.toFixed(2)}</span>}

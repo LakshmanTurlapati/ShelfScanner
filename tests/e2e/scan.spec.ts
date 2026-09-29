@@ -44,7 +44,7 @@ test("a recorded scan fills all four tabs", async ({ page }) => {
   );
 
   await page.goto("/");
-  await page.getByLabel("Access code").fill("test-code");
+  await page.getByRole("button", { name: "Live view on" }).click();
   await page.getByLabel("Shelf photo").setInputFiles("tests/e2e/fixture.jpg");
 
   await expect(page.getByRole("heading", { name: "The Hobbit" })).toBeVisible();

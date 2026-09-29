@@ -10,6 +10,11 @@ export const norm = (s: string) =>
     .trim()
     .replace(/^(the|a|an) /, "");
 
+function interior(d: Detection) {
+  if (d.stripCenter == null) return 1;
+  return Math.abs(d.stripCenter - 0.5);
+}
+
 function authorsConflict(a: string | null, b: string | null) {
   if (!a || !b) return false;
   return token_set_ratio(norm(a), norm(b)) < 90;
@@ -30,7 +35,11 @@ export function mergeOverlaps(strips: Detection[][], k = 4): Detection[] {
             )
           : undefined;
       if (!twin) out.push(d);
-      else if (d.confidence > twin.confidence) out[out.indexOf(twin)] = d;
+      else {
+        const sharper = d.confidence > twin.confidence ? d : twin;
+        const boxSource = interior(d) < interior(twin) ? d : twin;
+        out[out.indexOf(twin)] = sharper === boxSource ? sharper : { ...sharper, box: boxSource.box, stripCenter: boxSource.stripCenter };
+      }
     }
   }
   return out;

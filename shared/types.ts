@@ -24,6 +24,8 @@ export type Genre = (typeof GENRES)[number];
 
 export type Flag = "unverified_rating" | "possible_mismatch" | "bad_isbn";
 
+export type NormBox = { x: number; y: number; w: number; h: number };
+
 export type Detection = {
   strip: number;
   shelfRow: number;
@@ -35,6 +37,8 @@ export type Detection = {
   confidence: number;
   callNumber: string | null;
   sticker: string | null;
+  box: NormBox | null;
+  stripCenter: number | null;
 };
 
 export type Book = {
@@ -54,6 +58,8 @@ export type Book = {
   isbn13: string | null;
   flags: Flag[];
   score: number | null;
+  mark: string;
+  box: NormBox | null;
   embedding?: number[];
   error?: string;
 };

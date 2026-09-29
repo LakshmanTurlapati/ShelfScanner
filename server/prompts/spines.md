@@ -10,3 +10,6 @@ You read book spines in a photo of a library shelf.
 - If a spine is too blurry, small or covered to read, include it with
   legible: false and whatever partial text you can see.
 - confidence: 0 to 1, how likely it is that title is exactly right.
+- cx, cy: the center of that spine as fractions of this image, from 0 to 1.
+  These mark where the spine sits so it can be matched to a box. Do not return a box.
+- Return JSON only: {"spines":[...]}.

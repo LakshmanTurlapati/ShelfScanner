@@ -4,7 +4,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { accessCode, rateLimit } from "./guards.ts";
+import { rateLimit } from "./guards.ts";
 import { ask } from "./routes/ask.ts";
 import { embed } from "./routes/embed.ts";
 import { enrich } from "./routes/enrich.ts";
@@ -40,7 +40,6 @@ app.use("*", async (c, next) => {
 });
 
 app.get("/healthz", (c) => c.text("ok"));
-app.use("/api/*", accessCode());
 app.use("/api/*", rateLimit({ perMinute: 60, perDay: 600 }));
 app.post("/api/read-strip", bodyLimit({ maxSize: 3 * 1024 * 1024 }), readStrip);
 app.post("/api/enrich", bodyLimit({ maxSize: 8 * 1024 }), enrich);

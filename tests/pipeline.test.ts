@@ -16,6 +16,8 @@ function detection(partial: Partial<Detection> & Pick<Detection, "title" | "stri
     confidence: 0.8,
     callNumber: null,
     sticker: null,
+    box: null,
+    stripCenter: null,
     ...partial,
   };
 }
@@ -37,6 +39,8 @@ function book(partial: Partial<Book> & Pick<Book, "key">): Book {
     isbn13: null,
     flags: [],
     score: null,
+    mark: "",
+    box: null,
     ...partial,
   };
 }
@@ -60,6 +64,31 @@ describe("norm and overlap merge", () => {
     const merged = mergeOverlaps([[left], [right]]);
     expect(merged).toHaveLength(1);
     expect(merged[0]?.confidence).toBe(0.9);
+  });
+
+  it("keeps the sharper title and the box farther from the strip edge", () => {
+    const edge = detection({
+      strip: 0,
+      position: 8,
+      title: "The Hobbit",
+      author: "Tolkien",
+      confidence: 0.95,
+      stripCenter: 0.05,
+      box: { x: 0.02, y: 0.1, w: 0.04, h: 0.5 },
+    });
+    const interior = detection({
+      strip: 1,
+      position: 1,
+      title: "Hobbit",
+      author: "Tolkien",
+      confidence: 0.4,
+      stripCenter: 0.5,
+      box: { x: 0.4, y: 0.1, w: 0.08, h: 0.5 },
+    });
+    const merged = mergeOverlaps([[edge], [interior]]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.confidence).toBe(0.95);
+    expect(merged[0]?.box).toEqual(interior.box);
   });
 
   it("refuses an overlap merge when the authors conflict", () => {

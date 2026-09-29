@@ -5,10 +5,18 @@ export function stripPlan(width: number, height: number, overlap = 0.18) {
   return { count, stripW, step, overlap };
 }
 
-export async function toStrips(file: Blob, overlap = 0.18, longEdge = 2000) {
+export type PhotoStrip = {
+  blob: Blob;
+  sx: number;
+  stripW: number;
+  imageWidth: number;
+  imageHeight: number;
+};
+
+export async function toStrips(file: Blob, overlap = 0.18, longEdge = 2000): Promise<PhotoStrip[]> {
   const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
   const { count, stripW, step } = stripPlan(bmp.width, bmp.height, overlap);
-  const strips: Blob[] = [];
+  const strips: PhotoStrip[] = [];
   for (let i = 0; i < count; i++) {
     const sx = Math.min(i * step, Math.max(0, bmp.width - stripW));
     const scale = Math.min(1, longEdge / Math.max(stripW, bmp.height));
@@ -16,7 +24,13 @@ export async function toStrips(file: Blob, overlap = 0.18, longEdge = 2000) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("This browser cannot draw the photo.");
     ctx.drawImage(bmp, sx, 0, stripW, bmp.height, 0, 0, canvas.width, canvas.height);
-    strips.push(await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 }));
+    strips.push({
+      blob: await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 }),
+      sx,
+      stripW,
+      imageWidth: bmp.width,
+      imageHeight: bmp.height,
+    });
   }
   bmp.close();
   return strips;

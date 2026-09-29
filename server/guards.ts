@@ -1,22 +1,9 @@
-import { timingSafeEqual } from "node:crypto";
 import type { Context, Next } from "hono";
 
 const hits = new Map<string, number[]>();
 
 function clientIp(c: Context) {
   return c.req.header("fly-client-ip") || c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "local";
-}
-
-export function accessCode() {
-  return async (c: Context, next: Next) => {
-    const expected = process.env.ACCESS_CODE ?? "";
-    if (!expected) return c.text("ACCESS_CODE is not set", 503);
-    const given = c.req.header("x-access-code") ?? "";
-    const a = Buffer.from(given);
-    const b = Buffer.from(expected);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) return c.text("missing access code", 401);
-    await next();
-  };
 }
 
 export function rateLimit({ perMinute, perDay }: { perMinute: number; perDay: number }) {

@@ -1,14 +1,16 @@
 import pLimit from "p-limit";
 import type { Book, Detection } from "../../shared/types.ts";
 import { embedBooks, enrichBook, readStrip } from "./api";
+import { assignMarks, mapStripBox } from "./overlay/geometry";
 import { bookKey, mergeCanonical, mergeOverlaps } from "./pipeline/dedup";
 import { withScores } from "./pipeline/score";
-import { toStrips } from "./pipeline/tiling";
+import { toStrips, type PhotoStrip } from "./pipeline/tiling";
 import { useShelf } from "./store";
 
-function detectionFrom(strip: number, spine: Awaited<ReturnType<typeof readStrip>>["spines"][number]): Detection {
+function detectionFrom(strip: PhotoStrip, index: number, spine: Awaited<ReturnType<typeof readStrip>>["spines"][number]): Detection {
+  const hasBox = [spine.x, spine.y, spine.w, spine.h].every((value) => typeof value === "number");
   return {
-    strip,
+    strip: index,
     shelfRow: spine.shelf_row,
     position: spine.position,
     spineText: spine.spine_text,
@@ -18,13 +20,21 @@ function detectionFrom(strip: number, spine: Awaited<ReturnType<typeof readStrip
     confidence: spine.confidence,
     callNumber: spine.call_number,
     sticker: spine.sticker,
+    box: hasBox ? mapStripBox(strip, { x: spine.x!, y: spine.y!, w: spine.w!, h: spine.h! }) : null,
+    stripCenter: hasBox ? spine.x! + spine.w! / 2 : null,
   };
+}
+
+function detectionKey(detection: Detection) {
+  return detection.title.trim()
+    ? bookKey(detection.title, detection.author)
+    : `unread|${detection.strip}|${detection.shelfRow}|${detection.position}|${detection.box?.x ?? ""}|${detection.box?.y ?? ""}`;
 }
 
 function booksFrom(detections: Detection[]): Book[] {
   const grouped = new Map<string, Detection[]>();
   for (const detection of detections) {
-    const key = bookKey(detection.title, detection.author);
+    const key = detectionKey(detection);
     grouped.set(key, [...(grouped.get(key) ?? []), detection]);
   }
   return [...grouped].map(([key, group]) => ({
@@ -44,17 +54,19 @@ function booksFrom(detections: Detection[]): Book[] {
     isbn13: null,
     flags: [],
     score: null,
+    mark: "",
+    box: null,
   }));
 }
 
-export async function scanPhotos(files: File[], code: string) {
+export async function scanPhotos(files: File[]) {
   const store = useShelf.getState();
   store.beginSession(files.length);
   const perPhoto: Detection[][][] = [];
   let stripTotal = 0;
   let stripDone = 0;
   for (const file of files) {
-    let strips: Blob[];
+    let strips: PhotoStrip[];
     try {
       strips = await toStrips(file);
     } catch {
@@ -62,17 +74,18 @@ export async function scanPhotos(files: File[], code: string) {
       return;
     }
     stripTotal += strips.length;
-    const rows: Detection[][] = [];
-    for (let i = 0; i < strips.length; i++) {
-      stripDone += 1;
-      store.setProgress(`Reading strip ${stripDone} of ${stripTotal}`);
-      const json = await readStrip(strips[i], i + 1, strips.length, code);
-      rows.push(json.spines.map((spine) => detectionFrom(i, spine)));
-    }
+    const rows = await Promise.all(
+      strips.map(async (strip, i) => {
+        const json = await readStrip(strip.blob, i + 1, strips.length);
+        stripDone += 1;
+        store.setProgress(`Reading strip ${stripDone} of ${stripTotal}`);
+        return json.spines.map((spine) => detectionFrom(strip, i, spine));
+      }),
+    );
     perPhoto.push(rows);
   }
   const detections = perPhoto.flatMap((rows) => mergeOverlaps(rows));
-  let books = booksFrom(detections);
+  let books = assignMarks(booksFrom(detections));
   store.setBooks(books);
   store.setTab("shelf");
 
@@ -86,7 +99,6 @@ export async function scanPhotos(files: File[], code: string) {
         try {
           const result = await enrichBook(
             { title: detection?.title ?? book.key, author: detection?.author ?? null, callNumber: detection?.callNumber ?? null },
-            code,
           );
           const facts = result.facts;
           store.patchBook(book.key, {
@@ -124,7 +136,7 @@ export async function scanPhotos(files: File[], code: string) {
       text: `${book.canonicalTitle ?? book.detections[0]?.title ?? book.key} by ${book.authors.join(", ")}. ${book.primaryGenre ?? ""}; ${book.secondaryGenres.join(", ")}. ${book.summary ?? ""}`,
     }));
   if (items.length) {
-    const embedded = await embedBooks(items, code);
+    const embedded = await embedBooks(items);
     const byKey = new Map(embedded.items.map((item) => [item.key, item.embedding]));
     store.setBooks(useShelf.getState().sessions.find((s) => s.id === useShelf.getState().currentId)?.books.map((book) => ({
       ...book,
@@ -134,10 +146,10 @@ export async function scanPhotos(files: File[], code: string) {
   store.setProgress("");
 }
 
-export async function enrichOne(key: string, title: string, author: string | null, code: string) {
+export async function enrichOne(key: string, title: string, author: string | null) {
   const store = useShelf.getState();
   store.patchBook(key, { status: "enriching", canonicalTitle: title, authors: author ? [author] : [] });
-  const result = await enrichBook({ title, author, callNumber: null }, code);
+  const result = await enrichBook({ title, author, callNumber: null });
   const facts = result.facts;
   store.patchBook(key, {
     status: facts.matched ? "done" : "unmatched",
