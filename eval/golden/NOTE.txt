@@ -1,1 +1,11 @@
-Real labeled shelf photos are still needed. Put each photo beside a JSON file of the true titles and authors, left to right per row. Do not invent a golden set.
+Keep each real shelf photo beside a JSON file with its normalized spine boxes and printed titles.
+Use a null title for a spine whose title cannot be read; it counts for detection coverage but should never receive a title callout.
+With the dev web and API servers running and OPENROUTER_API_KEY set on the API server, use npm run eval:record -- crai-spines-17 to record the labels the app actually shows in eval/results. Run npm run eval to measure recall, precision, and wrong-spine labels. The release gate fails until every fixture has predictions, at least one label is shown, and no label is on the wrong spine.
+Use npm run eval:record-boxes -- crai-spines-17 to save and parse a real Perceptron box response for the model contract check.
+Do not put invented predictions in the golden set.
+
+crai-spines-17.jpg is a photo by Kippelboy, CC0 1.0, from Wikimedia Commons:
+https://commons.wikimedia.org/wiki/File:Book_spines_at_CRAI_Biblioteca_de_Biblioteconomia_i_Documentaci%C3%B3_17.jpg
+
+old-books-bookshelf.jpg is a photo by Clem Onojeghuo, CC0 1.0, from Wikimedia Commons:
+https://commons.wikimedia.org/wiki/File:Old_books_on_bookshelf._(Unsplash).jpg

@@ -1,4 +1,5 @@
 export const MODELS = {
+  read: "google/gemini-3.1-flash-lite",
   boxes: "perceptron/perceptron-mk1.5",
   spineText: "qwen/qwen3.7-flash",
   enrich: "google/gemini-3.5-flash-lite",
@@ -6,4 +7,4 @@ export const MODELS = {
   embed: "openai/text-embedding-3-small",
 } as const;
 
-export const PROMPT_VERSION = "1";
+export const PROMPT_VERSION = "2";

@@ -7,10 +7,11 @@ import { embeddingFrom, fresh, openCache, type CacheRow } from "../cache.ts";
 import { capped } from "../guards.ts";
 import { openrouter } from "../openrouter.ts";
 import { readPrompt } from "../prompts.ts";
-import { verify } from "../verify.ts";
+import { normalizeFacts, verify } from "../verify.ts";
 import { bookKey } from "../../web/src/pipeline/dedup.ts";
+import { GENRES } from "../../shared/types.ts";
 
-const rules = readPrompt("enrich.md");
+const rules = readPrompt("enrich.md").replace("{{genres}}", GENRES.join(", "));
 const bodySchema = z.object({
   title: z.string(),
   author: z.string().nullable().optional(),
@@ -46,7 +47,7 @@ function payload(title: string, author: string | null, callNumber: string | null
               parameters: {
                 engine: "exa",
                 mode: "fast",
-                max_uses: 2,
+                max_uses: 1,
                 max_results: 5,
                 max_characters: 2000,
                 allowed_domains: ["goodreads.com", "openlibrary.org", "books.google.com", "wikipedia.org"],
@@ -61,7 +62,8 @@ function payload(title: string, author: string | null, callNumber: string | null
     },
     provider: { require_parameters: true },
     plugins: [{ id: "response-healing" }],
-    reasoning: { effort: "low" },
+    reasoning: { effort: "minimal" },
+    max_tokens: 500,
   };
 }
 
@@ -78,7 +80,8 @@ async function identify(title: string, author: string | null, callNumber: string
         { role: "user", content: `Title: ${title}\nAuthor: ${author ?? "unknown"}\nCall number: ${callNumber ?? "none"}` },
       ],
       tools: payload(title, author, callNumber, true).tools,
-      reasoning: { effort: "low" },
+      reasoning: { effort: "minimal" },
+      max_tokens: 500,
     });
     const notes = grounded?.choices?.[0]?.message?.content ?? "";
     return openrouter("/chat/completions", {
@@ -88,6 +91,18 @@ async function identify(title: string, author: string | null, callNumber: string
         { role: "user", content: `Title: ${title}\nAuthor: ${author ?? "unknown"}\nNotes:\n${notes}` },
       ],
     });
+  }
+}
+
+function parseContent(content: unknown) {
+  if (typeof content !== "string") return content;
+  const start = content.indexOf("{");
+  const end = content.lastIndexOf("}");
+  if (start < 0 || end < start) return null;
+  try {
+    return JSON.parse(content.slice(start, end + 1));
+  } catch {
+    return null;
   }
 }
 
@@ -106,12 +121,15 @@ export async function enrich(c: Context) {
 
   const json = await identify(title, author ?? null, callNumber);
   const content = json?.choices?.[0]?.message?.content;
-  let factsParse = BookFacts.safeParse(typeof content === "string" ? JSON.parse(content) : content);
+  const factsParse = BookFacts.safeParse(normalizeFacts(parseContent(content)));
   if (!factsParse.success) {
-    const retry = await identify(title, author ?? null, callNumber);
-    const retryContent = retry?.choices?.[0]?.message?.content;
-    factsParse = BookFacts.safeParse(typeof retryContent === "string" ? JSON.parse(retryContent) : retryContent);
-    if (!factsParse.success) return c.text("enrichment failed", 502);
+    console.log(JSON.stringify({
+      route: "/api/enrich",
+      failed: "facts",
+      issues: factsParse.error.issues.slice(0, 5),
+      content: String(typeof content === "string" ? content : JSON.stringify(content)).slice(0, 600),
+    }));
+    return c.text("enrichment failed", 502);
   }
   const checked = verify(factsParse.data, json, title);
   const canonical = checked.facts.canonical_title

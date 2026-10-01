@@ -1,0 +1,18 @@
+[
+ {
+  "bookId": "59225",
+  "workId": "21473898",
+  "bookUrl": "/book/show/59225.The_Talisman",
+  "title": "The Talisman",
+  "bookTitleBare": "The Talisman",
+  "avgRating": "3.82",
+  "ratingsCount": 2847,
+  "author": {
+   "name": "Walter  Scott"
+  },
+  "numPages": 388,
+  "description": {
+   "truncated": true
+  }
+ }
+]

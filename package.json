@@ -12,8 +12,13 @@
     "build": "vite build && tsup && node scripts/copy-prompts.mjs",
     "start": "node dist/server/index.js",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "eval": "tsx eval/run.ts"
+    "eval": "tsx eval/run.ts",
+    "eval:record": "tsx eval/record.ts",
+    "eval:record-boxes": "tsx eval/record-boxes.ts",
+    "eval:track": "tsx eval/track-bench.ts",
+    "frames:pull": "tsx scripts/pull-frames.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.6",

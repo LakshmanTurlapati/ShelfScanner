@@ -27,6 +27,11 @@ export type Flag = "unverified_rating" | "possible_mismatch" | "bad_isbn";
 export type NormBox = { x: number; y: number; w: number; h: number };
 
 export type Detection = {
+  /** A physical spine in one captured photo, independent of its book identity. */
+  id?: string;
+  captureId?: string;
+  photoIndex?: number;
+  placement?: "matched" | "unmatched-text" | "unmatched-box" | "ambiguous";
   strip: number;
   shelfRow: number;
   position: number;
@@ -39,6 +44,8 @@ export type Detection = {
   sticker: string | null;
   box: NormBox | null;
   stripCenter: number | null;
+  /** Left and right edges of the box within its strip, 0 to 1. */
+  stripSpan?: [number, number] | null;
 };
 
 export type Book = {

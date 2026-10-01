@@ -1,12 +1,11 @@
 import type { Context, Next } from "hono";
 
-const hits = new Map<string, number[]>();
-
 function clientIp(c: Context) {
   return c.req.header("fly-client-ip") || c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "local";
 }
 
 export function rateLimit({ perMinute, perDay }: { perMinute: number; perDay: number }) {
+  const hits = new Map<string, number[]>();
   return async (c: Context, next: Next) => {
     const now = Date.now();
     const ip = clientIp(c);

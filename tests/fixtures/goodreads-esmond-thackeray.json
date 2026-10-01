@@ -1,0 +1,76 @@
+[
+ {
+  "bookId": "214498335",
+  "workId": "220772551",
+  "bookUrl": "/book/show/214498335-henry-esmond-1900-by-thackeray-william-makepeace-leather-bound",
+  "title": "Henry Esmond 1900 by Thackeray, William Makepeace [Leather Bound]",
+  "bookTitleBare": "Henry Esmond 1900 by Thackeray, William Makepeace [Leather Bound]",
+  "avgRating": 0.0,
+  "ratingsCount": 0,
+  "author": {
+   "name": "William Makepeace Thackeray"
+  },
+  "numPages": 474,
+  "description": {
+   "truncated": true
+  }
+ },
+ {
+  "bookId": "237510730",
+  "workId": "253261075",
+  "bookUrl": "/book/show/237510730-thackeray-s-esmond-1852-leather-bound",
+  "title": "Thackeray'S Esmond 1852 [Leather Bound]",
+  "bookTitleBare": "Thackeray'S Esmond 1852 [Leather Bound]",
+  "avgRating": 0.0,
+  "ratingsCount": 0,
+  "author": {
+   "name": "Unknown"
+  },
+  "numPages": 40,
+  "description": {
+   "truncated": true
+  }
+ },
+ {
+  "bookId": "138508382",
+  "workId": "154639756",
+  "bookUrl": "/book/show/138508382-5-volumes-of-classics-club",
+  "title": "5 Volumes of Classics Club: One The Nature of Things- Lucretius, The History of Henry Esmond- Thackeray, Old Goriot- Honore De Balzac, The Praise of Folly- Deisderius Erasmus, The Way of All flesh- Samuel Butler",
+  "bookTitleBare": "5 Volumes of Classics Club: One The Nature of Things- Lucretius, The History of Henry Esmond- Thackeray, Old Goriot- Honore De Balzac, The Praise of Folly- Deisderius Erasmus, The Way of All flesh- Samuel Butler",
+  "avgRating": 0.0,
+  "ratingsCount": 0,
+  "author": {
+   "name": "Richard Alexander Streatfeild"
+  },
+  "numPages": 0,
+  "description": {
+   "truncated": true
+  }
+ },
+ {
+  "bookId": "138518451",
+  "workId": "154647572",
+  "bookUrl": "/book/show/138518451-4-volumes-of-classics-club",
+  "title": "4 Volumes of Classics Club: The History of Henry Esmond- Thackeray, Two Years Before the Mast- Richard Henry Dana Jr., The Beginnings of Modern Science Scientific Writing of the 16th, 17th, & 18th Centuries, Marcus Aurelius and His Times",
+  "bookTitleBare": "4 Volumes of Classics Club: The History of Henry Esmond- Thackeray, Two Years Before the Mast- Richard Henry Dana Jr., The Beginnings of Modern Science Scientific Writing of the 16th, 17th, & 18th Centuries, Marcus Aurelius and His Times",
+  "avgRating": 0.0,
+  "ratingsCount": 0,
+  "author": {
+   "name": "Henry Esmond"
+  },
+  "numPages": 0
+ },
+ {
+  "bookId": "166438418",
+  "workId": "176480281",
+  "bookUrl": "/book/show/166438418-the-history-of-henry-esmond-by-w-m-thackeray",
+  "title": "The History Of Henry Esmond by W.M. Thackeray (Ed)",
+  "bookTitleBare": "The History Of Henry Esmond by W.M. Thackeray",
+  "avgRating": 0.0,
+  "ratingsCount": 0,
+  "author": {
+   "name": "Unknown Author"
+  },
+  "numPages": 0
+ }
+]

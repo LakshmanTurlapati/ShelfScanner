@@ -1,0 +1,82 @@
+[
+ {
+  "bookId": "11870160",
+  "workId": "16827542",
+  "bookUrl": "/book/show/11870160-the-art-of-the-hobbit-by-j-r-r-tolkien",
+  "title": "The Art of The Hobbit by J.R.R. Tolkien",
+  "bookTitleBare": "The Art of The Hobbit by J.R.R. Tolkien",
+  "avgRating": "4.33",
+  "ratingsCount": 6412,
+  "author": {
+   "name": "Wayne G. Hammond"
+  },
+  "numPages": 144,
+  "description": {
+   "truncated": true
+  }
+ },
+ {
+  "bookId": "45441105",
+  "workId": "70198074",
+  "bookUrl": "/book/show/45441105-the-hobbits-of-tolkien",
+  "title": "The Hobbits of Tolkien",
+  "bookTitleBare": "The Hobbits of Tolkien",
+  "avgRating": "3.69",
+  "ratingsCount": 1082,
+  "author": {
+   "name": "David Day"
+  },
+  "numPages": 192,
+  "description": {
+   "truncated": true
+  }
+ },
+ {
+  "bookId": "77437",
+  "workId": "74814",
+  "bookUrl": "/book/show/77437.The_Individuated_Hobbit",
+  "title": "The Individuated Hobbit: Jung, Tolkien and the Archetypes of Middle-Earth",
+  "bookTitleBare": "The Individuated Hobbit: Jung, Tolkien and the Archetypes of Middle-Earth",
+  "avgRating": "3.86",
+  "ratingsCount": 57,
+  "author": {
+   "name": "Timothy R. O'Neill"
+  },
+  "numPages": 200,
+  "description": {
+   "truncated": true
+  }
+ },
+ {
+  "bookId": "5907",
+  "workId": "1540236",
+  "bookUrl": "/book/show/5907.The_Hobbit_or_There_and_Back_Again",
+  "title": "The Hobbit, or There and Back Again",
+  "bookTitleBare": "The Hobbit, or There and Back Again",
+  "avgRating": "4.30",
+  "ratingsCount": 4641303,
+  "author": {
+   "name": "J.R.R. Tolkien"
+  },
+  "numPages": 366,
+  "description": {
+   "truncated": true
+  }
+ },
+ {
+  "bookId": "30",
+  "workId": "89369",
+  "bookUrl": "/book/show/30.J_R_R_Tolkien_4_Book_Boxed_Set",
+  "title": "J.R.R. Tolkien 4-Book Boxed Set: The Hobbit and The Lord of the Rings",
+  "bookTitleBare": "J.R.R. Tolkien 4-Book Boxed Set: The Hobbit and The Lord of the Rings",
+  "avgRating": "4.62",
+  "ratingsCount": 147576,
+  "author": {
+   "name": "J.R.R. Tolkien"
+  },
+  "numPages": 1728,
+  "description": {
+   "truncated": true
+  }
+ }
+]

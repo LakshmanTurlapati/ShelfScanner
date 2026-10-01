@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { Book } from "../../shared/types.ts";
 import { GENRE_LABELS } from "../../shared/types.ts";
 import { askShelf } from "./api";
@@ -27,25 +27,36 @@ export function App() {
   const [rawOrder, setRawOrder] = useState(false);
   const [notice, setNotice] = useState("");
   const [live, setLive] = useState(true);
-  const [stillUrl, setStillUrl] = useState<string | null>(null);
+  const [stillPhoto, setStillPhoto] = useState<{ url: string; captureId: string } | null>(null);
+  const latestUpload = useRef<string | null>(null);
 
   useEffect(() => {
     void shelf.hydrate();
   }, [shelf.hydrate]);
 
+  useEffect(() => () => {
+    if (stillPhoto) URL.revokeObjectURL(stillPhoto.url);
+  }, [stillPhoto]);
+
   async function onFiles(list: FileList | File[]) {
     const files = [...list].filter((file) => file.type.startsWith("image/") || /\.(jpe?g|png|heic|webp)$/i.test(file.name));
     if (!files.length) return;
-    setStillUrl((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return files.length === 1 ? URL.createObjectURL(files[0]) : null;
+    const captureId = crypto.randomUUID();
+    latestUpload.current = captureId;
+    setStillPhoto((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return files.length === 1 ? { url: URL.createObjectURL(files[0]), captureId } : null;
     });
     setLive(false);
     setNotice("");
     try {
-      await scanPhotos(files);
+      await scanPhotos(files, { captureId });
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "The scan failed.");
+      setStillPhoto((current) => {
+        if (current?.captureId === captureId) URL.revokeObjectURL(current.url);
+        return current?.captureId === captureId ? null : current;
+      });
+      if (latestUpload.current === captureId) setNotice(err instanceof Error ? err.message : "The scan failed.");
     }
   }
 
@@ -115,7 +126,7 @@ export function App() {
             <Capture notice={notice} compact onFiles={onFiles} />
           </div>
 
-          {shelf.tab === "shelf" && stillUrl && books.some((book) => book.box) && <StillCallouts url={stillUrl} books={books} />}
+          {shelf.tab === "shelf" && stillPhoto?.captureId === session.id && <StillCallouts url={stillPhoto.url} books={books} captureId={session.id} />}
 
           {shelf.tab === "shelf" && (
             <ul className="space-y-3">
@@ -193,14 +204,14 @@ export function App() {
                 </li>
               ))}
             </ul>
-            <button className="mt-4 text-sm underline" type="button" onClick={() => { shelf.clearLocal(); setDrawer(false); }}>
+            <button className="mt-4 text-sm underline" type="button" onClick={() => { shelf.clearLocal(); setStillPhoto(null); setDrawer(false); }}>
               Clear
             </button>
           </div>
         </aside>
       )}
 
-      {live && <CameraScan />}
+      {live && <CameraScan onClose={() => setLive(false)} />}
 
       {editing && (
         <EditDialog
@@ -252,7 +263,7 @@ function BookCard({ book, onEdit, onRetry }: { book: Book; onEdit: () => void; o
     <li className="rounded-2xl bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="serif text-xl leading-tight">{book.mark ? `${book.mark} ` : ""}{book.status === "queued" || book.status === "enriching" ? "…" : title}</h2>
+          <h2 className="serif text-xl leading-tight">{book.mark ? `${book.mark} ` : ""}{title}</h2>
           <p className="text-sm text-[#6d6458]">{book.authors.join(", ") || (book.status === "enriching" ? "Looking it up" : "Author unknown")}</p>
         </div>
         {book.avgRating != null && <span className="text-sm">{book.avgRating.toFixed(2)}</span>}

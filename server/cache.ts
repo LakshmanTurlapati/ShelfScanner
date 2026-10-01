@@ -29,6 +29,11 @@ export function openCache(file = process.env.CACHE_PATH ?? "./data/cache.db") {
       fetched_at     INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS books_canonical ON books(canonical_key);
+    CREATE TABLE IF NOT EXISTS quick_facts (
+      key        TEXT PRIMARY KEY,
+      record     TEXT,
+      fetched_at INTEGER
+    );
   `);
   return db;
 }
@@ -37,6 +42,18 @@ export function fresh(row: CacheRow | undefined, model: string) {
   if (!row) return false;
   if (row.model !== model || row.prompt_version !== PROMPT_VERSION) return false;
   return Math.floor(Date.now() / 1000) - row.fetched_at < TTL_SECONDS;
+}
+
+export type QuickRow = { key: string; record: string; fetched_at: number };
+
+const QUICK_TTL_SECONDS = 30 * 24 * 60 * 60;
+const QUICK_MISS_TTL_SECONDS = 24 * 60 * 60;
+
+// A book Goodreads did not know is asked about again sooner, in case it has been added since.
+export function quickFresh(row: QuickRow | undefined) {
+  if (!row) return false;
+  const ttl = row.record === "null" ? QUICK_MISS_TTL_SECONDS : QUICK_TTL_SECONDS;
+  return Math.floor(Date.now() / 1000) - row.fetched_at < ttl;
 }
 
 export function embeddingFrom(blob: Buffer | null) {

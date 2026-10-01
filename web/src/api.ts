@@ -16,6 +16,7 @@ export type SpineResponse = {
     y?: number;
     w?: number;
     h?: number;
+    placement?: "matched" | "unmatched-text" | "unmatched-box" | "ambiguous";
   }>;
 };
 
@@ -26,9 +27,17 @@ export type EnrichResponse = {
   embedding?: number[];
 };
 
-async function send(input: string, init: RequestInit) {
+export type QuickFacts = Pick<BookFactsInput, "matched" | "canonical_title" | "authors" | "avg_rating" | "ratings_count" | "rating_url"> & {
+  rating_source: "goodreads";
+};
+
+export type QuickFactsItem =
+  | { key: string; verified: true; facts: BookFactsInput | null; flags: Flag[] }
+  | { key: string; verified: false; facts: QuickFacts | null; flags: Flag[] };
+
+async function send(input: string, init: RequestInit, retry = true) {
   const res = await fetch(input, init);
-  if (res.status === 502 || res.status === 504) {
+  if (retry && (res.status === 502 || res.status === 504)) {
     const retry = await fetch(input, init);
     if (!retry.ok) throw new Error(`${retry.status}`);
     return retry;
@@ -51,8 +60,17 @@ export async function enrichBook(input: { title: string; author: string | null; 
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
-  });
+  }, false);
   return (await res.json()) as EnrichResponse;
+}
+
+export async function quickFacts(items: Array<{ key: string; title: string; author: string | null }>) {
+  const res = await send("/api/quick-facts", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ items }),
+  }, false);
+  return (await res.json()) as { items: QuickFactsItem[] };
 }
 
 export async function embedBooks(items: Array<{ key: string; text: string }>) {
@@ -62,6 +80,13 @@ export async function embedBooks(items: Array<{ key: string; text: string }>) {
     body: JSON.stringify({ items }),
   });
   return (await res.json()) as { items: Array<{ key: string; embedding: number[] }> };
+}
+
+export async function saveFrame(image: Blob, meta: unknown) {
+  const form = new FormData();
+  form.append("image", image, "frame.jpg");
+  form.append("meta", JSON.stringify(meta));
+  await fetch("/api/frames", { method: "POST", body: form });
 }
 
 export async function askShelf(question: string, books: unknown[], onText: (chunk: string) => void) {
