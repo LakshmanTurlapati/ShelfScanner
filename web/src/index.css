@@ -1,20 +1,80 @@
 @import "tailwindcss";
 
-:root {
-  color: #1c1915;
-  background: #f3ecdf;
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
+@layer base {
+  :root {
+    color: #1f1a17;
+    background: #fffdfb;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+  }
+
+  button, input, textarea {
+    font: inherit;
+  }
+
+  a {
+    color: #1f4d3a;
+  }
+
+  a:hover {
+    color: #163828;
+  }
 }
 
-body {
-  margin: 0;
-  min-height: 100dvh;
+/* Layered, so Tailwind utilities on the same element (font-normal, colours) still win. */
+@layer components {
+  .display {
+    font-family: "Outfit", system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .mono {
+    font-family: "Space Mono", monospace;
+  }
+
+  .card {
+    border-radius: 18px;
+    border: 1px solid rgba(41, 29, 20, 0.1);
+    background: #ffffff;
+  }
+
+  .row {
+    border-radius: 12px;
+    border: 1px solid rgba(41, 29, 20, 0.1);
+    background: #ffffff;
+  }
 }
 
-button, input, textarea {
-  font: inherit;
+@keyframes ss-rise {
+  0% { transform: scaleY(0); opacity: 0; }
+  20% { transform: scaleY(1.05); opacity: 1; }
+  26%, 100% { transform: scaleY(1); opacity: 1; }
 }
 
-.serif {
-  font-family: Palatino, "Iowan Old Style", Georgia, serif;
+@keyframes ss-tip {
+  0%, 34% { transform: rotate(0deg); }
+  44% { transform: rotate(14deg); }
+  50% { transform: rotate(8deg); }
+  55%, 100% { transform: rotate(10deg); }
+}
+
+@keyframes ss-shelf {
+  0% { transform: scaleX(0); }
+  18%, 100% { transform: scaleX(1); }
+}
+
+@keyframes ss-fade {
+  0%, 34% { opacity: 0; transform: translateY(8px); }
+  50%, 100% { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ss-motion, .ss-motion * {
+    animation: none !important;
+  }
 }

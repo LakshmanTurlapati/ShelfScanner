@@ -17,7 +17,8 @@ export type FrameState = {
 
 const INTERVAL_MS = 3000;
 const MAX_SIDE = 960;
-const INK = "#f3ecdf";
+const INK = "#fffaf6";
+const ACCENT = "#ff6b35";
 const LABEL_H = 43;
 
 function fit(ctx: CanvasRenderingContext2D, text: string, width: number) {
@@ -45,8 +46,8 @@ export function drawLabeledFrame(video: HTMLVideoElement, state: FrameState) {
   ctx.textBaseline = "middle";
   ctx.lineWidth = 1.5;
   for (const label of state.labels) {
-    ctx.strokeStyle = INK;
-    ctx.fillStyle = INK;
+    ctx.strokeStyle = ACCENT;
+    ctx.fillStyle = ACCENT;
     ctx.beginPath();
     ctx.moveTo(label.x, label.y);
     ctx.lineTo(label.labelX, label.labelY + 22);
@@ -56,8 +57,9 @@ export function drawLabeledFrame(video: HTMLVideoElement, state: FrameState) {
     ctx.fill();
     ctx.beginPath();
     ctx.roundRect(label.labelX, label.labelY, labelW, LABEL_H, 8);
-    ctx.fillStyle = "rgba(28, 25, 21, 0.9)";
+    ctx.fillStyle = "rgba(32, 25, 23, 0.9)";
     ctx.fill();
+    ctx.strokeStyle = "rgba(255, 140, 66, 0.6)";
     ctx.stroke();
     ctx.fillStyle = INK;
     const rating = label.rating != null ? `${label.rating.toFixed(1)}★` : "";

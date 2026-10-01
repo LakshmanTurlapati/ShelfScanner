@@ -393,13 +393,13 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-40 overflow-hidden bg-black text-[#f3ecdf]">
+    <div className="fixed inset-0 z-40 overflow-hidden bg-black text-[#fffaf6]">
       <video ref={videoRef} className="h-full w-full object-cover" autoPlay muted playsInline />
       {projection && !lost && (
         <>
           <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox={`0 0 ${viewport.width} ${viewport.height}`}>
             {labels.map((label) => (
-              <g key={label.id} stroke="#f3ecdf" strokeWidth="1.5" fill="#f3ecdf">
+              <g key={label.id} stroke="#ff6b35" strokeWidth="1.5" fill="#ff6b35">
                 <path d={`M ${label.x} ${label.y} L ${label.leaderX} ${label.labelY + 22}`} fill="none" />
                 <circle cx={label.x} cy={label.y} r="3" />
               </g>
@@ -410,7 +410,7 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
               key={label.id}
               type="button"
               data-spine-id={label.id}
-              className="absolute flex h-[43px] w-[min(164px,42vw)] items-center gap-2 rounded-lg border border-[#f3ecdf] bg-[#1c1915]/90 px-2 text-left text-xs shadow-lg"
+              className="absolute flex h-[43px] w-[min(164px,42vw)] items-center gap-2 rounded-lg border border-[rgba(255,140,66,0.6)] bg-[rgba(32,25,23,0.9)] px-2 text-left text-xs text-[#fffaf6] shadow-[0_10px_15px_rgba(0,0,0,0.3)]"
               style={{ left: label.labelX, top: label.labelY }}
               onClick={() => { setSelected(label.id); setShowReview(false); }}
               aria-label={`Details for ${label.title}`}
@@ -422,11 +422,11 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
         </>
       )}
       <div className="absolute left-4 top-4 flex gap-2">
-        <button className="rounded-full bg-[#f3ecdf] px-3 py-1 text-[#1c1915]" type="button" onClick={() => void readShelf(false)} disabled={reading === "tap"} aria-busy={reading !== null}>
+        <button className="rounded-full bg-[#ff6b35] px-3 py-1 font-semibold text-[#1f1a17]" type="button" onClick={() => void readShelf(false)} disabled={reading === "tap"} aria-busy={reading !== null}>
           {reading ? "Reading…" : captureId ? "Read again" : "Read shelf"}
         </button>
         <button
-          className={`rounded-full border border-[#f3ecdf] px-3 py-1 ${auto ? "bg-[#f3ecdf] text-[#1c1915]" : "bg-black/50"}`}
+          className={`rounded-full border border-[#fffaf6] px-3 py-1 ${auto ? "bg-[#fffaf6] text-[#1f1a17]" : "bg-black/50 text-[#fffaf6]"}`}
           type="button"
           aria-pressed={auto}
           aria-label={auto ? "Auto-read on" : "Auto-read off"}
@@ -441,13 +441,13 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
         </p>
       )}
       {notice.includes("camera") || notice.includes("Camera") ? (
-        <button className="absolute left-4 top-28 rounded-full bg-[#f3ecdf] px-3 py-1 text-[#1c1915]" type="button" onClick={onClose}>Use a shelf photo</button>
+        <button className="absolute left-4 top-28 rounded-full bg-[#fffaf6] px-3 py-1 text-[#1f1a17]" type="button" onClick={onClose}>Use a shelf photo</button>
       ) : null}
-      <div className="absolute inset-x-0 bottom-0 rounded-t-2xl bg-[#f3ecdf] p-3 text-[#1c1915]">
+      <div className="absolute inset-x-0 bottom-0 rounded-tl-[18px] rounded-tr-2xl bg-[#fffaf6] p-3 text-[#1f1a17]">
         {selectedBook ? (
           <div className="max-h-44 overflow-auto">
             <button className="float-right text-sm underline" type="button" onClick={() => setSelected(null)}>Close</button>
-            <h2 className="serif pr-12 text-lg">{selectedAnchor?.title ?? selectedBook.canonicalTitle ?? selectedBook.detections[0]?.title}</h2>
+            <h2 className="display pr-12 text-lg">{selectedAnchor?.title ?? selectedBook.canonicalTitle ?? selectedBook.detections[0]?.title}</h2>
             {/* When the lookup found a different book, its author, rating and summary are not this spine's. */}
             {selectedAnchor?.showRating ? (
               <>
@@ -459,7 +459,7 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
         ) : showReview ? (
           <div className="max-h-44 overflow-auto">
             <button className="float-right text-sm underline" type="button" onClick={() => setShowReview(false)}>Close</button>
-            <h2 className="serif text-lg">Needs review</h2>
+            <h2 className="display text-lg">Needs review</h2>
             <ul className="text-sm">{review.map((item) => <li key={item.id}>{item.title}</li>)}</ul>
           </div>
         ) : (

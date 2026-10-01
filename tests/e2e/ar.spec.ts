@@ -434,3 +434,14 @@ test("a tap during an automatic read adopts it instead of reading twice", async 
   await page.waitForTimeout(3500);
   expect(reads).toHaveLength(reads[0]);
 });
+
+test("the splash shows on launch and then gets out of the way", async ({ page }) => {
+  await fakeCamera(page);
+  await page.goto("/");
+  const splash = page.getByRole("status", { name: "Shelf Scanner is starting" });
+  await expect(splash).toBeVisible();
+  await expect(splash).toContainText("Point at a shelf. Find the best book on it.");
+  await expect(splash).toContainText(/v\d+\.\d+ \| By Lakshman Turlapati/);
+  await expect(page.getByRole("button", { name: "Read shelf" })).toBeVisible();
+  await expect(splash).toHaveCount(0, { timeout: 4000 });
+});

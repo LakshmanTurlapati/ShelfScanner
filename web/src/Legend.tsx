@@ -15,9 +15,9 @@ function LegendRow({ book }: { book: Book }) {
   const rating = ratingOf(book);
   return (
     <li className="flex items-baseline gap-3">
-      <span className="inline-grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#1c1915] text-xs text-[#f3ecdf]">{book.mark || "·"}</span>
+      <span className="inline-grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#ff6b35] text-xs font-semibold text-[#1f1a17]">{book.mark || "·"}</span>
       <span className="min-w-0 flex-1 truncate">{titleOf(book)}</span>
-      <span className="text-sm text-[#6d6458]">{rating}</span>
+      <span className="text-sm text-[#6a584d]">{rating}</span>
     </li>
   );
 }
@@ -29,7 +29,7 @@ export function Legend({ books }: { books: Book[] }) {
     <div className="space-y-4">
       {rated.length > 0 && (
         <section>
-          <h2 className="mb-2 text-sm uppercase tracking-wide text-[#6d6458]">Top rated</h2>
+          <h2 className="mono mb-2 text-xs uppercase tracking-[0.06em] text-[#6a584d]">Top rated</h2>
           <ul className="space-y-2">
             {rated.map((book) => (
               <LegendRow key={`rated-${book.key}`} book={book} />
@@ -38,7 +38,7 @@ export function Legend({ books }: { books: Book[] }) {
         </section>
       )}
       <section>
-        <h2 className="mb-2 text-sm uppercase tracking-wide text-[#6d6458]">On this shelf</h2>
+        <h2 className="mono mb-2 text-xs uppercase tracking-[0.06em] text-[#6a584d]">On this shelf</h2>
         <ul className="space-y-2">
           {reading.map((book) => (
             <LegendRow key={book.key} book={book} />

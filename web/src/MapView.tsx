@@ -34,7 +34,7 @@ export function MapView({ books }: { books: Book[] }) {
 
   return (
     <section>
-      <div className="overflow-hidden rounded-2xl bg-white">
+      <div className="card overflow-hidden">
         {Graph && graph.nodes.length > 0 ? (
           <Graph
             graphData={graph}
@@ -47,13 +47,13 @@ export function MapView({ books }: { books: Book[] }) {
             height={420}
           />
         ) : (
-          <p className="p-4 text-sm text-[#6d6458]">The map appears after embeddings come back.</p>
+          <p className="p-4 text-sm text-[#6a584d]">The map appears after embeddings come back.</p>
         )}
       </div>
       {selected && (
-        <div className="mt-3 rounded-2xl bg-white p-4">
-          <h2 className="serif text-xl">{byKey.get(selected)?.canonicalTitle ?? selected}</h2>
-          <p className="mt-1 text-sm text-[#6d6458]">Similar on this shelf</p>
+        <div className="card mt-3 p-4">
+          <h2 className="display text-xl">{byKey.get(selected)?.canonicalTitle ?? selected}</h2>
+          <p className="mt-1 text-sm text-[#6a584d]">Similar on this shelf</p>
           <ul className="mt-2 space-y-1 text-sm">
             {neighbors.map((item) => (
               <li key={item.key}>{byKey.get(item.key)?.canonicalTitle ?? item.key}</li>
@@ -61,12 +61,12 @@ export function MapView({ books }: { books: Book[] }) {
           </ul>
         </div>
       )}
-      <h2 className="mb-2 mt-4 text-sm uppercase tracking-wide text-[#6d6458]">Nearest neighbors</h2>
+      <h2 className="mono mb-2 mt-4 text-xs font-semibold uppercase tracking-[0.06em] text-[#6a584d]">Nearest neighbors</h2>
       <ul className="space-y-2">
         {books.filter((book) => book.embedding).map((book) => (
-          <li key={book.key} className="rounded-xl bg-white px-3 py-2 text-sm">
+          <li key={book.key} className="row px-3 py-2 text-sm">
             <span className="font-medium">{book.canonicalTitle ?? book.key}</span>
-            <span className="text-[#6d6458]"> · {book.primaryGenre ? GENRE_LABELS[book.primaryGenre] : "Unsorted"}</span>
+            <span className="text-[#6a584d]"> · {book.primaryGenre ? GENRE_LABELS[book.primaryGenre] : "Unsorted"}</span>
             <div>{nearest(books, book.key).map((item) => byKey.get(item.key)?.canonicalTitle ?? item.key).join(", ") || "No neighbors yet"}</div>
           </li>
         ))}
