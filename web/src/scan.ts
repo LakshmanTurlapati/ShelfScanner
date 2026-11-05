@@ -286,7 +286,7 @@ export async function scanPhotos(files: File[], options: ScanOptions = {}): Prom
   const store = useShelf.getState();
   const tick = stopwatch(options.startedAt ?? performance.now(), options.onTiming);
   const captureId = options.captureId ?? crypto.randomUUID();
-  store.beginSession(files.length, captureId);
+  store.beginSession(files.length, captureId, "still");
   let photoStrips: PhotoStrip[][];
   try {
     photoStrips = await Promise.all(files.map((file) => toStrips(file)));
@@ -302,7 +302,7 @@ export async function scanCanvas(canvas: HTMLCanvasElement | OffscreenCanvas, op
   const store = useShelf.getState();
   const tick = stopwatch(options.startedAt ?? performance.now(), options.onTiming);
   const captureId = options.captureId ?? crypto.randomUUID();
-  store.beginSession(1, captureId);
+  store.beginSession(1, captureId, "walk");
   let strips: PhotoStrip[];
   try {
     strips = await stripsFromCanvas(canvas, { longEdge: 1600, quality: 0.8 });

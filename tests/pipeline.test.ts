@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { get } from "idb-keyval";
 import { SPINES_JSON_SCHEMA } from "../shared/schemas.ts";
 import type { Book, Detection } from "../shared/types.ts";
 import { bookKey, mergeCanonical, mergeOverlaps, norm } from "../web/src/pipeline/dedup.ts";
@@ -8,7 +10,7 @@ import { stripCrops, stripPlan, stripsFromCanvas } from "../web/src/pipeline/til
 import { renamedKeys, useShelf } from "../web/src/store.ts";
 import { isValidIsbn13, normalizeFacts, verify, type ChatResponse } from "../server/verify.ts";
 
-vi.mock("idb-keyval", () => ({ get: async () => undefined, set: async () => undefined }));
+vi.mock("idb-keyval", () => ({ get: vi.fn(async () => undefined), set: vi.fn(async () => undefined) }));
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -355,5 +357,129 @@ describe("session store", () => {
     const books = useShelf.getState().sessions.find((session) => session.id === id)!.books;
     expect(books).toHaveLength(1);
     expect(books[0]).toMatchObject({ key: "hobbit|tolkien", status: "enriching", avgRating: 4.3, ratingsCount: 4_600_000 });
+  });
+
+  function resetShelf() {
+    useShelf.setState({ ready: false, sessions: [], currentId: null, progress: "", tab: "shelf", answer: "", asking: false });
+  }
+
+  it("does not stamp a session that was already stored", async () => {
+    resetShelf();
+    vi.mocked(get).mockResolvedValueOnce({
+      sessions: [{ id: "pre", createdAt: "2020-01-01T00:00:00.000Z", photoCount: 1, books: [book({ key: "dune" })] }],
+      currentId: "pre",
+    });
+    await useShelf.getState().hydrate();
+    const session = useShelf.getState().sessions.find((item) => item.id === "pre");
+    expect(session?.contract).toBeUndefined();
+    expect(session?.mode).toBeUndefined();
+    expect(Object.hasOwn(session!.books[0]!, "pin")).toBe(false);
+    expect(Object.hasOwn(session!.books[0]!, "coverId")).toBe(false);
+  });
+
+  it("drops pin and coverId on a pre-milestone session and still saves a rating", () => {
+    resetShelf();
+    useShelf.setState({
+      sessions: [{ id: "old", createdAt: "2020-01-01T00:00:00.000Z", photoCount: 1, books: [] }],
+      currentId: null,
+    });
+    const store = useShelf.getState();
+    store.setBooksFor("old", [book({ key: "dune", pin: { x: 10, row: 1 }, coverId: 42 })]);
+    let stored = useShelf.getState().sessions.find((session) => session.id === "old")!.books[0]!;
+    expect(Object.hasOwn(stored, "pin")).toBe(false);
+    expect(Object.hasOwn(stored, "coverId")).toBe(false);
+    store.patchBookFor("old", "dune", { avgRating: 4.3 });
+    stored = useShelf.getState().sessions.find((session) => session.id === "old")!.books[0]!;
+    expect(stored.avgRating).toBe(4.3);
+    expect(useShelf.getState().sessions.find((session) => session.id === "old")?.contract).toBeUndefined();
+  });
+
+  it("keeps a legal cover id on a still session and drops the pin", () => {
+    resetShelf();
+    const id = useShelf.getState().beginSession(1, "still-cover");
+    useShelf.getState().setBooksFor(id, [book({ key: "dune", pin: { x: 10, row: 1 }, coverId: 42 })]);
+    const session = useShelf.getState().sessions.find((item) => item.id === id)!;
+    expect(session).toMatchObject({ contract: 1, mode: "still" });
+    expect(Object.hasOwn(session.books[0]!, "pin")).toBe(false);
+    expect(session.books[0]?.coverId).toBe(42);
+  });
+
+  it("keeps the first walk pin, a gap in x, and no coverId key when neither book has one", () => {
+    resetShelf();
+    const id = useShelf.getState().beginSession(1, "walk-pin", "walk");
+    useShelf.getState().setBooksFor(id, [book({ key: "dune", pin: { x: 10, row: 1, extra: true } as Book["pin"] })]);
+    useShelf.getState().mergeBooksFor(id, [book({ key: "dune", pin: { x: 99, row: 2 } }), book({ key: "neuromancer", pin: { x: 40, row: 1 } })]);
+    const books = useShelf.getState().sessions.find((session) => session.id === id)!.books;
+    expect(books.find((item) => item.key === "dune")?.pin).toEqual({ x: 10, row: 1 });
+    expect(books.find((item) => item.key === "neuromancer")?.pin).toEqual({ x: 40, row: 1 });
+    expect(Object.hasOwn(books[0]!, "coverId")).toBe(false);
+    expect(Object.hasOwn(books[1]!, "coverId")).toBe(false);
+  });
+
+  it("omits a cover id that is not null or a positive integer and keeps an explicit null", () => {
+    resetShelf();
+    const id = useShelf.getState().beginSession(1, "cover-guard", "walk");
+    useShelf.getState().setBooksFor(id, [
+      book({ key: "zero", coverId: 0 }),
+      book({ key: "fraction", coverId: 1.5 }),
+      book({ key: "url", coverId: "https://example.test/cover.jpg" as unknown as number }),
+      book({ key: "miss", coverId: null }),
+    ]);
+    const books = useShelf.getState().sessions.find((session) => session.id === id)!.books;
+    expect(Object.hasOwn(books.find((item) => item.key === "zero")!, "coverId")).toBe(false);
+    expect(Object.hasOwn(books.find((item) => item.key === "fraction")!, "coverId")).toBe(false);
+    expect(Object.hasOwn(books.find((item) => item.key === "url")!, "coverId")).toBe(false);
+    expect(books.find((item) => item.key === "miss")?.coverId).toBeNull();
+  });
+
+  it("does not add the contract to an older session when a new one starts", () => {
+    resetShelf();
+    useShelf.setState({
+      sessions: [{ id: "pre", createdAt: "2020-01-01T00:00:00.000Z", photoCount: 1, books: [] }],
+      currentId: null,
+    });
+    useShelf.getState().beginSession(1, "fresh", "walk");
+    expect(useShelf.getState().sessions.find((session) => session.id === "pre")?.contract).toBeUndefined();
+    expect(useShelf.getState().sessions.find((session) => session.id === "fresh")).toMatchObject({ contract: 1, mode: "walk" });
+  });
+});
+
+describe("canonical place", () => {
+  it("keeps the earlier pin and an explicit null cover id", () => {
+    const first = book({
+      key: "a",
+      canonicalTitle: "Dune",
+      authors: ["Herbert"],
+      pin: { x: 10, row: 1 },
+      coverId: null,
+    });
+    const second = book({
+      key: "b",
+      canonicalTitle: "Dune",
+      authors: ["Herbert"],
+      pin: { x: 40, row: 2 },
+      coverId: 99,
+    });
+    const merged = mergeCanonical([first, second]);
+    expect(merged[0]?.pin).toEqual({ x: 10, row: 1 });
+    expect(merged[0]?.coverId).toBeNull();
+  });
+
+  it("does not create a coverId key when neither record has one", () => {
+    const merged = mergeCanonical([
+      book({ key: "a", canonicalTitle: "Dune", authors: ["Herbert"] }),
+      book({ key: "b", canonicalTitle: "Dune", authors: ["Herbert"] }),
+    ]);
+    expect(Object.hasOwn(merged[0]!, "coverId")).toBe(false);
+  });
+});
+
+describe("scan session mode", () => {
+  it("passes still and walk into beginSession and does not mention pin or coverId", () => {
+    const source = readFileSync(new URL("../web/src/scan.ts", import.meta.url), "utf8");
+    expect(source).toContain('beginSession(files.length, captureId, "still")');
+    expect(source).toContain('beginSession(1, captureId, "walk")');
+    expect(source).not.toMatch(/\bpin\b/);
+    expect(source).not.toMatch(/\bcoverId\b/);
   });
 });
