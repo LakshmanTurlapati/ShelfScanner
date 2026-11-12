@@ -35,10 +35,23 @@ export type QuickFactsItem =
   | { key: string; verified: true; facts: BookFactsInput | null; flags: Flag[] }
   | { key: string; verified: false; facts: QuickFacts | null; flags: Flag[] };
 
+/** Packaged Android builds set VITE_API_BASE. The browser app keeps same-origin paths. */
+export function apiUrl(path: string, base = import.meta.env.VITE_API_BASE ?? "") {
+  const root = String(base).replace(/\/$/, "");
+  return `${root}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+// CapacitorHttp keeps a File body and drops a plain Blob (it arrives as {}).
+export function jpegFile(blob: Blob, name: string) {
+  if (blob instanceof File) return blob;
+  return new File([blob], name, { type: blob.type || "image/jpeg" });
+}
+
 async function send(input: string, init: RequestInit, retry = true) {
-  const res = await fetch(input, init);
+  const target = apiUrl(input);
+  const res = await fetch(target, init);
   if (retry && (res.status === 502 || res.status === 504)) {
-    const retry = await fetch(input, init);
+    const retry = await fetch(target, init);
     if (!retry.ok) throw new Error(`${retry.status}`);
     return retry;
   }
@@ -50,7 +63,7 @@ export async function readStrip(blob: Blob, strip: number, of: number) {
   const res = await send(`/api/read-strip?strip=${strip}&of=${of}`, {
     method: "POST",
     headers: { "content-type": "image/jpeg" },
-    body: blob,
+    body: jpegFile(blob, "strip.jpg"),
   });
   return (await res.json()) as SpineResponse;
 }
@@ -84,9 +97,9 @@ export async function embedBooks(items: Array<{ key: string; text: string }>) {
 
 export async function saveFrame(image: Blob, meta: unknown) {
   const form = new FormData();
-  form.append("image", image, "frame.jpg");
+  form.append("image", jpegFile(image, "frame.jpg"), "frame.jpg");
   form.append("meta", JSON.stringify(meta));
-  await fetch("/api/frames", { method: "POST", body: form });
+  await fetch(apiUrl("/api/frames"), { method: "POST", body: form });
 }
 
 export async function askShelf(question: string, books: unknown[], onText: (chunk: string) => void) {
