@@ -10,7 +10,7 @@ import { CameraScan } from "./CameraScan";
 import { bookTitle, CoverGrid } from "./CoverGrid";
 import { coverImageUrl } from "./covers";
 import { MapView } from "./MapView";
-import { loadProfile } from "./profile";
+import { loadProfile, type Profile } from "./profile";
 import { ProfileGate } from "./ProfileGate";
 import { SPLASH_MS, Splash } from "./Splash";
 import { StillCallouts } from "./StillCallouts";
@@ -35,6 +35,7 @@ export function App() {
   const [live, setLive] = useState(true);
   const [splash, setSplash] = useState(true);
   const [profileGate, setProfileGate] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [stillPhoto, setStillPhoto] = useState<{ url: string; captureId: string } | null>(null);
   const latestUpload = useRef<string | null>(null);
 
@@ -50,8 +51,10 @@ export function App() {
   useEffect(() => {
     if (splash) return;
     let cancelled = false;
-    void loadProfile().then((profile) => {
-      if (!cancelled && !profile) setProfileGate(true);
+    void loadProfile().then((loaded) => {
+      if (cancelled) return;
+      setProfile(loaded);
+      if (!loaded) setProfileGate(true);
     });
     return () => {
       cancelled = true;
@@ -154,7 +157,7 @@ export function App() {
 
           {shelf.tab === "shelf" && stillPhoto?.captureId === session.id && <StillCallouts url={stillPhoto.url} books={books} captureId={session.id} />}
 
-          {shelf.tab === "shelf" && <CoverGrid books={books} onOpen={setDetail} />}
+          {shelf.tab === "shelf" && <CoverGrid books={books} profile={profile} onOpen={setDetail} />}
 
           {shelf.tab === "rated" && (
             <section>
@@ -231,11 +234,18 @@ export function App() {
         </aside>
       )}
 
-      {live && <CameraScan onClose={() => setLive(false)} paused={profileGate || splash} />}
+      {live && <CameraScan onClose={() => setLive(false)} paused={profileGate || splash} profile={profile} />}
 
       {splash && <Splash />}
 
-      {profileGate && <ProfileGate onDone={() => setProfileGate(false)} />}
+      {profileGate && (
+        <ProfileGate onDone={() => {
+          void loadProfile().then((loaded) => {
+            setProfile(loaded);
+            setProfileGate(false);
+          });
+        }} />
+      )}
 
       {detail && (
         <CoverDetail

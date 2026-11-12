@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { bookMatchesProfile } from "./match";
 import { anchorsForCapture } from "./overlay/anchors";
+import type { Profile } from "./profile";
 import { saveFrame } from "./api";
 import { AUTO_READ_KEY, createAutoRead } from "./overlay/auto-read";
 import { captureFrames, type FrameState } from "./overlay/frames";
@@ -65,7 +67,7 @@ function grayFrame(video: HTMLVideoElement, canvas: HTMLCanvasElement, width: nu
   return pixels && { gray: grayFromRGBA(pixels.data, width, height), width, height };
 }
 
-export function CameraScan({ onClose, paused = false }: { onClose: () => void; paused?: boolean }) {
+export function CameraScan({ onClose, paused = false, profile = null }: { onClose: () => void; paused?: boolean; profile?: Profile | null }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const samplingCanvas = useRef<HTMLCanvasElement | null>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -127,7 +129,12 @@ export function CameraScan({ onClose, paused = false }: { onClose: () => void; p
   const byId = new Map(anchors.map((anchor) => [anchor.id, anchor]));
   const shown = labels.map((label) => {
     const anchor = byId.get(label.id)!;
-    return { ...label, title: anchor.title, rating: anchor.showRating ? anchor.book.avgRating : null };
+    return {
+      ...label,
+      title: anchor.title,
+      rating: anchor.showRating ? anchor.book.avgRating : null,
+      forYou: bookMatchesProfile(anchor.book, profile),
+    };
   });
   const baseStatus = notice || (lost ? "Tracking lost. Read the shelf again." : session ? shelf.progress : "");
   const status = auto && autoPaused ? `${baseStatus ? `${baseStatus} ` : ""}Auto-read paused. Tap Read shelf to resume.` : baseStatus;
@@ -403,12 +410,13 @@ export function CameraScan({ onClose, paused = false }: { onClose: () => void; p
               key={label.id}
               type="button"
               data-spine-id={label.id}
-              className="absolute flex h-[43px] w-[min(164px,42vw)] items-center gap-2 rounded-lg border border-[rgba(255,140,66,0.6)] bg-[rgba(32,25,23,0.9)] px-2 text-left text-xs text-[#fffaf6] shadow-[0_10px_15px_rgba(0,0,0,0.3)]"
+              className={`absolute flex h-[43px] w-[min(164px,42vw)] items-center gap-2 rounded-lg border bg-[rgba(32,25,23,0.9)] px-2 text-left text-xs text-[#fffaf6] shadow-[0_10px_15px_rgba(0,0,0,0.3)] ${label.forYou ? "border-[#c4b5fd] ring-2 ring-[#7c3aed]" : "border-[rgba(255,140,66,0.6)]"}`}
               style={{ left: label.labelX, top: label.labelY }}
               onClick={() => { setSelected(label.id); setShowReview(false); }}
               aria-label={`Details for ${label.title}`}
             >
               <span className="min-w-0 flex-1 truncate">{label.title}</span>
+              {label.forYou && <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-[#e9d5ff]">For you</span>}
               {label.rating != null && <span className="shrink-0">{label.rating.toFixed(1)}★</span>}
             </button>
           ))}

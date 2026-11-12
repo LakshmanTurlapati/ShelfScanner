@@ -2,7 +2,7 @@
 
 ## Current position
 
-v0.14 phase 2 is done. Next is phase 3, the highlights. The branch stacks on `cursor/phase-1-data-contracts-c651`.
+v0.14 phase 3 is done. The milestone audit is next. The branch stacks on `cursor/phase-1-data-contracts-c651`.
 
 ## Decisions
 
