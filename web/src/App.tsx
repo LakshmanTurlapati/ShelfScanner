@@ -8,6 +8,8 @@ import { enrichOne, scanPhotos } from "./scan";
 import { currentSession, useShelf } from "./store";
 import { CameraScan } from "./CameraScan";
 import { MapView } from "./MapView";
+import { loadProfile } from "./profile";
+import { ProfileGate } from "./ProfileGate";
 import { SPLASH_MS, Splash } from "./Splash";
 import { StillCallouts } from "./StillCallouts";
 
@@ -29,6 +31,7 @@ export function App() {
   const [notice, setNotice] = useState("");
   const [live, setLive] = useState(true);
   const [splash, setSplash] = useState(true);
+  const [profileGate, setProfileGate] = useState(false);
   const [stillPhoto, setStillPhoto] = useState<{ url: string; captureId: string } | null>(null);
   const latestUpload = useRef<string | null>(null);
 
@@ -40,6 +43,17 @@ export function App() {
     const timer = setTimeout(() => setSplash(false), SPLASH_MS);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (splash) return;
+    let cancelled = false;
+    void loadProfile().then((profile) => {
+      if (!cancelled && !profile) setProfileGate(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [splash]);
 
   useEffect(() => () => {
     if (stillPhoto) URL.revokeObjectURL(stillPhoto.url);
@@ -223,6 +237,8 @@ export function App() {
       {live && <CameraScan onClose={() => setLive(false)} />}
 
       {splash && <Splash />}
+
+      {profileGate && <ProfileGate onDone={() => setProfileGate(false)} />}
 
       {editing && (
         <EditDialog

@@ -2,7 +2,7 @@
 
 ## Current position
 
-Phase 2 — Cover lookup: verified. Next is Phase 3, the profile screen.
+Phase 3 — Profile screen: verified. Next is Phase 4, walk wiring.
 
 ## Decisions
 

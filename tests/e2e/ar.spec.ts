@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { dismissProfile } from "./dismiss-profile";
 
 function spine(title: string, position: number, x: number) {
   return {
@@ -38,6 +39,7 @@ test("camera denial offers the photo flow", async ({ page }) => {
     Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia: () => Promise.reject(new Error("denied")) } });
   });
   await page.goto("/");
+  await dismissProfile(page);
   await expect(page.getByText("The camera is unavailable. Use a shelf photo instead.")).toBeVisible();
   await page.getByRole("button", { name: "Use a shelf photo" }).click();
   await expect(page.getByLabel("Shelf photo")).toBeVisible();
@@ -46,6 +48,7 @@ test("camera denial offers the photo flow", async ({ page }) => {
 test("a failed model read leaves no empty session", async ({ page }) => {
   await page.route("**/api/read-strip**", (route) => route.fulfill({ status: 502, body: "read failed" }));
   await page.goto("/");
+  await dismissProfile(page);
   await page.getByRole("button", { name: "Live view on" }).click();
   await page.getByLabel("Shelf photo").setInputFiles("tests/e2e/fixture.jpg");
   await expect(page.getByText("The shelf could not be read. Try again.")).toBeVisible();
@@ -66,6 +69,7 @@ test("photo overlay keeps two physical copies of the same title", async ({ page 
   await page.route("**/api/embed", (route) => route.fulfill({ json: { items: [] } }));
   await noQuickFacts(page);
   await page.goto("/");
+  await dismissProfile(page);
   await page.getByRole("button", { name: "Live view on" }).click();
   await page.getByLabel("Shelf photo").setInputFiles("eval/golden/crai-spines-17.jpg");
   await expect(page.getByAltText("The shelf you photographed")).toBeVisible();
@@ -94,6 +98,7 @@ test("late scan results stay in their own session", async ({ page }) => {
   await page.route("**/api/embed", (route) => route.fulfill({ json: { items: [] } }));
   await noQuickFacts(page);
   await page.goto("/");
+  await dismissProfile(page);
   await page.getByRole("button", { name: "Live view on" }).click();
   const input = page.getByLabel("Shelf photo");
   await input.setInputFiles("tests/e2e/fixture.jpg");
@@ -160,6 +165,7 @@ test("a scan failure after tracking loss still shows the error", async ({ page }
     await route.fulfill({ status: 502, body: "read failed" });
   });
   await page.goto("/");
+  await dismissProfile(page);
   await expect.poll(() => page.locator("video").evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Read shelf" }).click();
   await page.evaluate(() => { (window as Window & { blankCamera?: boolean }).blankCamera = true; });
@@ -184,6 +190,7 @@ test("live title appears, gains its rating, and hides when tracking is lost", as
   await page.route("**/api/embed", (route) => route.fulfill({ json: { items: [] } }));
   await noQuickFacts(page);
   await page.goto("/");
+  await dismissProfile(page);
   await expect.poll(() => page.locator("video").evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Read shelf" }).click();
   const label = page.getByRole("button", { name: "Details for The Hobbit" });
@@ -222,6 +229,7 @@ test("camera frames are saved on read and while labels are visible", async ({ pa
   await page.route("**/api/embed", (route) => route.fulfill({ json: { items: [] } }));
   await noQuickFacts(page);
   await page.goto("/");
+  await dismissProfile(page);
   await expect.poll(() => page.locator("video").evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
   const frame = (kind: string) => page.waitForRequest((request) =>
     request.url().endsWith("/api/frames") && request.postDataBuffer()!.toString("latin1").includes(`"kind":"${kind}"`));
@@ -250,6 +258,7 @@ test("a strip's labels appear while the other strips are still being read", asyn
   await page.route("**/api/embed", (route) => route.fulfill({ json: { items: [] } }));
   await noQuickFacts(page);
   await page.goto("/");
+  await dismissProfile(page);
   await expect.poll(() => page.locator("video").evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Read shelf" }).click();
   const hobbit = page.getByRole("button", { name: "Details for The Hobbit" });
@@ -272,6 +281,7 @@ test("labels from a strip that was read stay when another strip fails", async ({
   await page.route("**/api/embed", (route) => route.fulfill({ json: { items: [] } }));
   await noQuickFacts(page);
   await page.goto("/");
+  await dismissProfile(page);
   await expect.poll(() => page.locator("video").evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Read shelf" }).click();
   await expect(page.getByRole("button", { name: "Details for The Hobbit" })).toContainText("4.3★");
@@ -305,6 +315,7 @@ test("a quick rating shows on the label before the verified lookup returns", asy
   });
   await page.route("**/api/embed", (route) => route.fulfill({ json: { items: [] } }));
   await page.goto("/");
+  await dismissProfile(page);
   await expect.poll(() => page.locator("video").evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Read shelf" }).click();
   const label = page.getByRole("button", { name: "Details for The Hobbit" });
@@ -332,6 +343,7 @@ test("a book the cache already verified skips the web lookup", async ({ page }) 
   });
   await page.route("**/api/embed", (route) => route.fulfill({ json: { items: [] } }));
   await page.goto("/");
+  await dismissProfile(page);
   await expect.poll(() => page.locator("video").evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
   const embedded = page.waitForRequest("**/api/embed");
   await page.getByRole("button", { name: "Read shelf" }).click();
@@ -365,6 +377,7 @@ test("a steady camera reads the shelf without a tap", async ({ page }) => {
   const readFrame = page.waitForRequest((request) =>
     request.url().endsWith("/api/frames") && request.postDataBuffer()!.toString("latin1").includes('"kind":"read"'));
   await page.goto("/");
+  await dismissProfile(page);
   await expect(page.getByRole("button", { name: "Auto-read on" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Details for The Hobbit" })).toContainText("4.3★");
   expect((await readFrame).postDataBuffer()!.toString("latin1")).toContain('"auto":true');
@@ -384,6 +397,7 @@ test("a steady view that gave no labels is read again", async ({ page }) => {
   await page.route("**/api/embed", (route) => route.fulfill({ json: { items: [] } }));
   await noQuickFacts(page);
   await page.goto("/");
+  await dismissProfile(page);
   await expect(page.getByRole("button", { name: "Details for The Hobbit" })).toContainText("4.3★", { timeout: 10_000 });
   expect(reads).toBe(2);
 });
@@ -392,6 +406,7 @@ test("a moving camera is not read until it holds still", async ({ page }) => {
   await fakeCamera(page, { autoRead: true, moving: true });
   const reads = await hobbitShelf(page);
   await page.goto("/");
+  await dismissProfile(page);
   await cameraPlaying(page);
   await page.waitForTimeout(3000);
   expect(reads).toHaveLength(0);
@@ -403,6 +418,7 @@ test("turning Auto off stops automatic reads and is remembered", async ({ page }
   await fakeCamera(page, { autoRead: true, moving: true });
   const reads = await hobbitShelf(page);
   await page.goto("/");
+  await dismissProfile(page);
   await cameraPlaying(page);
   await page.getByRole("button", { name: "Auto-read on" }).click();
   await expect(page.getByRole("button", { name: "Auto-read off" })).toHaveAttribute("aria-pressed", "false");
@@ -423,6 +439,7 @@ test("a tap during an automatic read adopts it instead of reading twice", async 
   let release!: () => void;
   const reads = await hobbitShelf(page, new Promise<void>((resolve) => { release = resolve; }));
   await page.goto("/");
+  await dismissProfile(page);
   await expect.poll(() => reads.length).toBeGreaterThan(0);
   const button = page.getByRole("button", { name: "Reading…" });
   await button.click();
@@ -438,6 +455,7 @@ test("a tap during an automatic read adopts it instead of reading twice", async 
 test("the splash shows on launch and then gets out of the way", async ({ page }) => {
   await fakeCamera(page);
   await page.goto("/");
+  await dismissProfile(page);
   const splash = page.getByRole("status", { name: "Shelf Scanner is starting" });
   await expect(splash).toBeVisible();
   await expect(splash).toContainText("Point at a shelf. Find the best book on it.");
