@@ -65,7 +65,7 @@ function grayFrame(video: HTMLVideoElement, canvas: HTMLCanvasElement, width: nu
   return pixels && { gray: grayFromRGBA(pixels.data, width, height), width, height };
 }
 
-export function CameraScan({ onClose }: { onClose: () => void }) {
+export function CameraScan({ onClose, paused = false }: { onClose: () => void; paused?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const samplingCanvas = useRef<HTMLCanvasElement | null>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -135,7 +135,7 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     frameState.current = { captureId, status, reading: reading !== null, lost, viewport, anchors: anchors.length, review: review.length, labels: shown };
     if (!stale) slots.current = new Map(labels.map((label) => [label.id, label]));
-    autoGate.current = { enabled: auto, covered: Boolean(projection) && !lost && anchors.length > 0, sheetOpen: Boolean(selectedBook) || showReview };
+    autoGate.current = { enabled: auto && !paused, covered: Boolean(projection) && !lost && anchors.length > 0, sheetOpen: Boolean(selectedBook) || showReview };
     readRef.current = readShelf;
   });
 

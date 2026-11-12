@@ -159,7 +159,7 @@ async function readSession(
   const patch = (key: string, next: Partial<Book>) => {
     store.patchBookFor(captureId, key, next);
     const book = sessionBooks(captureId).find((item) => item.key === key);
-    if (book?.avgRating != null && anchorsForCapture([book], captureId).some((anchor) => anchor.showRating)) tick("first-rating");
+    if (book?.avgRating != null && anchorsForCapture([book], frameId).some((anchor) => anchor.showRating)) tick("first-rating");
   };
 
   const applyQuick = (items: QuickFactsItem[]) => {

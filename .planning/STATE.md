@@ -2,7 +2,7 @@
 
 ## Current position
 
-Phase 4 — Walk wiring: verified. Next is Phase 5, the cover grid.
+Phase 5 — Cover grid: verified. Milestone audit is next.
 
 ## Decisions
 

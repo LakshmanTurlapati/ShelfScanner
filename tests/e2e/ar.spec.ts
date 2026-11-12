@@ -455,7 +455,6 @@ test("a tap during an automatic read adopts it instead of reading twice", async 
 test("the splash shows on launch and then gets out of the way", async ({ page }) => {
   await fakeCamera(page);
   await page.goto("/");
-  await dismissProfile(page);
   const splash = page.getByRole("status", { name: "Shelf Scanner is starting" });
   await expect(splash).toBeVisible();
   await expect(splash).toContainText("Point at a shelf. Find the best book on it.");
