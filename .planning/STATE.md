@@ -2,7 +2,7 @@
 
 ## Current position
 
-Phase 1 — Data and contracts: verified. Next is Phase 2, cover lookup.
+Phase 2 — Cover lookup: verified. Next is Phase 3, the profile screen.
 
 ## Decisions
 

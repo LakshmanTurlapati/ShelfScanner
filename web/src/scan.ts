@@ -2,6 +2,7 @@ import pLimit from "p-limit";
 import type { BookFactsInput } from "../../shared/schemas.ts";
 import type { Book, Detection, Flag } from "../../shared/types.ts";
 import { embedBooks, enrichBook, quickFacts, readStrip, type QuickFactsItem, type SpineResponse } from "./api";
+import { fillCovers } from "./covers";
 import { anchorsForCapture, labelable } from "./overlay/anchors";
 import { assignMarks, mapStripBox } from "./overlay/geometry";
 import { bookKey, mergeCanonical, mergeOverlaps } from "./pipeline/dedup";
@@ -279,6 +280,7 @@ async function finishSession(captureId: string) {
       // Enrichment remains useful when the map embedding service is unavailable.
     }
   }
+  await fillCovers(captureId);
   store.setProgressFor(captureId, "");
 }
 
@@ -328,4 +330,5 @@ export async function enrichOne(key: string, title: string, author: string | nul
   });
   const session = useShelf.getState().sessions.find((item) => item.id === sessionId);
   if (session) store.setBooksFor(sessionId, withScores(session.books));
+  await fillCovers(sessionId);
 }
