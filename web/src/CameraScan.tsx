@@ -10,8 +10,8 @@ import { grayFromRGBA, projectAnchor, type GrayFrame, type Mat3 } from "./overla
 import type { TrackingReply } from "./overlay/tracking.worker";
 import { withScores } from "./pipeline/score";
 import { scanCanvas, type ScanTiming } from "./scan";
-import { currentSession, useShelf } from "./store";
-import type { Book } from "../../shared/types.ts";
+import { useShelf } from "./store";
+import { noteShelfShift, shelfShift } from "./walk";
 
 // Labels stay where they were through a brief tracking failure, then hide; the capture is given
 // up when no step has been tracked for longer.
@@ -65,7 +65,7 @@ function grayFrame(video: HTMLVideoElement, canvas: HTMLCanvasElement, width: nu
   return pixels && { gray: grayFromRGBA(pixels.data, width, height), width, height };
 }
 
-export function CameraScan({ onClose }: { onClose: () => void }) {
+export function CameraScan({ onClose, paused = false }: { onClose: () => void; paused?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const samplingCanvas = useRef<HTMLCanvasElement | null>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -80,13 +80,13 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
   const frameState = useRef<FrameState | null>(null);
   const slots = useRef<ReadonlyMap<string, LiveSlot>>(new Map());
   const inFlight = useRef<"auto" | "tap" | null>(null);
-  const lastScan = useRef<string | null>(null);
+  const walkSessionId = useRef<string | null>(null);
   const autoGate = useRef({ enabled: false, covered: false, sheetOpen: false });
   const latestSample = useRef<GrayFrame | null>(null);
   const readRef = useRef<(auto: boolean) => Promise<void>>(async () => undefined);
   const [autoRead] = useState(createAutoRead);
   const shelf = useShelf();
-  const session = currentSession(shelf);
+  const session = shelf.sessions.find((item) => item.id === walkSessionId.current) ?? null;
   const books = useMemo(() => withScores(session?.books ?? []), [session?.books]);
   const [captureId, setCaptureId] = useState<string | null>(null);
   const [projection, setProjection] = useState<{ h: Mat3; width: number; height: number } | null>(null);
@@ -100,10 +100,9 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
 
-  const currentBooks = session?.id === captureId ? books : [];
-  const anchors = anchorsForCapture(currentBooks, captureId ?? "");
+  const anchors = anchorsForCapture(books, captureId ?? "");
   const placedIds = new Set(anchors.map((anchor) => anchor.id));
-  const review = currentBooks.flatMap((book) =>
+  const review = books.flatMap((book) =>
     book.detections.filter((detection) => detection.captureId === captureId && !placedIds.has(detection.id ?? "")).map((detection) => ({
       id: detection.id ?? `${book.key}:${detection.strip}:${detection.position}`,
       title: detection.title.trim() || "Unread spine",
@@ -130,13 +129,13 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
     const anchor = byId.get(label.id)!;
     return { ...label, title: anchor.title, rating: anchor.showRating ? anchor.book.avgRating : null };
   });
-  const baseStatus = notice || (lost ? "Tracking lost. Read the shelf again." : session?.id === captureId ? shelf.progress : "");
+  const baseStatus = notice || (lost ? "Tracking lost. Read the shelf again." : session ? shelf.progress : "");
   const status = auto && autoPaused ? `${baseStatus ? `${baseStatus} ` : ""}Auto-read paused. Tap Read shelf to resume.` : baseStatus;
 
   useEffect(() => {
     frameState.current = { captureId, status, reading: reading !== null, lost, viewport, anchors: anchors.length, review: review.length, labels: shown };
     if (!stale) slots.current = new Map(labels.map((label) => [label.id, label]));
-    autoGate.current = { enabled: auto, covered: Boolean(projection) && !lost && anchors.length > 0, sheetOpen: Boolean(selectedBook) || showReview };
+    autoGate.current = { enabled: auto && !paused, covered: Boolean(projection) && !lost && anchors.length > 0, sheetOpen: Boolean(selectedBook) || showReview };
     readRef.current = readShelf;
   });
 
@@ -314,10 +313,16 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
     let frame: HTMLCanvasElement | null = null;
     let settled: Promise<void> = Promise.resolve();
     let error = "";
-    const id = crypto.randomUUID();
-    latestRead.current = id;
-    activeId.current = id;
-    setCaptureId(id);
+    const sessionId = walkSessionId.current && useShelf.getState().sessions.some((item) => item.id === walkSessionId.current)
+      ? walkSessionId.current
+      : crypto.randomUUID();
+    walkSessionId.current = sessionId;
+    const prior = useShelf.getState().sessions.find((item) => item.id === sessionId);
+    if (prior) noteShelfShift(sessionId, projection && !lost ? shelfShift(projection.h, projection.width, projection.height) : 1);
+    const frameId = crypto.randomUUID();
+    latestRead.current = frameId;
+    activeId.current = frameId;
+    setCaptureId(frameId);
     worker.postMessage({ type: "reset" });
     try {
       const full = document.createElement("canvas");
@@ -335,17 +340,18 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
       const keyframe = videoPixels(video, (samplingCanvas.current ??= document.createElement("canvas")), trackWidth, trackHeight);
       if (!keyframe) throw new Error("This browser cannot track the shelf.");
       const t = frameTime.current ?? performance.now();
-      worker.postMessage({ type: "begin", captureId: id, t, width: trackWidth, height: trackHeight, rgba: keyframe.data.buffer }, [keyframe.data.buffer]);
+      worker.postMessage({ type: "begin", captureId: frameId, t, width: trackWidth, height: trackHeight, rgba: keyframe.data.buffer }, [keyframe.data.buffer]);
       ({ settled } = await scanCanvas(full, {
-        captureId: id,
+        captureId: frameId,
+        sessionId,
         startedAt: started,
         onTiming: (name, ms) => { timings[TIMING_FIELDS[name]] = ms; },
       }));
     } catch (caught) {
       error = caught instanceof Error ? caught.message : "The scan failed.";
       // Tracking loss may already have cleared activeId, but the failure is still this read's to report.
-      if (latestRead.current === id) {
-        if (activeId.current === id) {
+      if (latestRead.current === frameId) {
+        if (activeId.current === frameId) {
           activeId.current = null;
           worker.postMessage({ type: "reset" });
         }
@@ -354,30 +360,17 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
         setNotice(error);
       }
     } finally {
-      const books = useShelf.getState().sessions.find((item) => item.id === id)?.books ?? [];
-      const labelled = anchorsForCapture(books, id).length > 0;
+      const seen = useShelf.getState().sessions.find((item) => item.id === sessionId)?.books ?? [];
+      const labelled = anchorsForCapture(seen, frameId).length > 0;
       autoRead.finished(inFlight.current === "auto", labelled, performance.now());
-      if (labelled) replaceRepeatScan(id, books);
       inFlight.current = null;
       setReading(null);
       setAutoPaused(autoRead.paused());
       if (frame) {
         const size = { width: sourceSize.current.width, height: sourceSize.current.height };
-        void saveReadFrame(frame, settled, { captureId: id, video: size, timings, error: error || null, auto }).catch(() => undefined);
+        void saveReadFrame(frame, settled, { captureId: frameId, video: size, timings, error: error || null, auto }).catch(() => undefined);
       }
     }
-  }
-
-  // Automatic re-reads of the same shelf would pile up in the scan history; a new scan whose
-  // books mostly match the previous camera scan replaces it.
-  function replaceRepeatScan(id: string, books: Book[]) {
-    const previous = lastScan.current;
-    lastScan.current = id;
-    if (!previous || previous === id) return;
-    const before = useShelf.getState().sessions.find((item) => item.id === previous)?.books ?? [];
-    const keys = new Set(before.map((book) => book.key));
-    const shared = books.filter((book) => keys.has(book.key)).length;
-    if (before.length && shared / Math.min(before.length, books.length) >= 0.5) useShelf.getState().removeSession(previous);
   }
 
   function toggleAuto() {

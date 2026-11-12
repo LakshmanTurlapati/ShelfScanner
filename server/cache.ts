@@ -34,6 +34,11 @@ export function openCache(file = process.env.CACHE_PATH ?? "./data/cache.db") {
       record     TEXT,
       fetched_at INTEGER
     );
+    CREATE TABLE IF NOT EXISTS covers (
+      isbn       TEXT PRIMARY KEY,
+      cover_id   INTEGER,
+      fetched_at INTEGER NOT NULL
+    );
   `);
   return db;
 }

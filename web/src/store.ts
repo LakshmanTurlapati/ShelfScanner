@@ -1,6 +1,7 @@
 import { get, set } from "idb-keyval";
 import { create } from "zustand";
 import type { Book, Session } from "../../shared/types.ts";
+import { pinFor, shelfOrigin } from "./walk.ts";
 
 const STORE_KEY = "shelf-scanner-sessions";
 
@@ -16,9 +17,10 @@ type State = {
   setTab: (tab: State["tab"]) => void;
   setAnswer: (answer: string) => void;
   setAsking: (asking: boolean) => void;
-  beginSession: (photoCount: number, id?: string) => string;
+  beginSession: (photoCount: number, id?: string, mode?: "still" | "walk") => string;
   setBooksFor: (id: string, books: Book[]) => void;
   mergeBooksFor: (id: string, books: Book[]) => void;
+  addFrame: (id: string) => void;
   patchBookFor: (id: string, key: string, patch: Partial<Book>) => void;
   setProgressFor: (id: string, progress: string) => void;
   removeSession: (id: string) => void;
@@ -69,14 +71,82 @@ export function renamedKeys(current: Book[], books: Book[]) {
   return renamed;
 }
 
+const CONTRACT = 1;
+
+function withoutKey(book: Book, key: "pin" | "coverId"): Book {
+  const next = { ...book };
+  delete next[key];
+  return next;
+}
+
+function finitePin(value: unknown): value is { x: number; row: number } {
+  if (!value || typeof value !== "object") return false;
+  const pin = value as { x?: unknown; row?: unknown };
+  return typeof pin.x === "number" && Number.isFinite(pin.x) && typeof pin.row === "number" && Number.isFinite(pin.row);
+}
+
+function legalCover(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isInteger(value) && value > 0);
+}
+
+// A missing cover id must stay missing. Assigning undefined creates a key IndexedDB will keep.
+function coverChoice(stored: Book, incoming: Book): number | null | undefined {
+  if (stored.coverId !== undefined) return legalCover(stored.coverId) ? stored.coverId : undefined;
+  if (incoming.coverId !== undefined) return legalCover(incoming.coverId) ? incoming.coverId : undefined;
+  return undefined;
+}
+
+function pinChoice(stored: Book, incoming: Book): Book["pin"] | undefined {
+  if (finitePin(stored.pin)) return { x: stored.pin.x, row: stored.pin.row };
+  if (finitePin(incoming.pin)) return { x: incoming.pin.x, row: incoming.pin.row };
+  return undefined;
+}
+
+function applyPlace(book: Book, pin: Book["pin"] | undefined, coverId: number | null | undefined): Book {
+  let next = book;
+  if (pin === undefined) {
+    if ("pin" in next) next = withoutKey(next, "pin");
+  } else next = { ...next, pin };
+  if (coverId === undefined) {
+    if ("coverId" in next) next = withoutKey(next, "coverId");
+  } else next = { ...next, coverId };
+  return next;
+}
+
 // Fields a lookup has patched survive a re-read, and follow a renamed book; only what comes from the photo is replaced.
-function mergeBooks(current: Book[], books: Book[]) {
+function mergeBooks(current: Book[], books: Book[], keepAbsent = false) {
+  const renamed = renamedKeys(current, books);
   const before = new Map(current.map((book) => [book.key, book]));
-  for (const [from, to] of renamedKeys(current, books)) before.set(to, before.get(from)!);
-  return books.map((book) => {
+  for (const [from, to] of renamed) before.set(to, before.get(from)!);
+  const merged = books.map((book) => {
     const old = before.get(book.key);
-    return old ? { ...old, key: book.key, detections: book.detections, mark: book.mark, box: book.box } : book;
+    if (!old) return book;
+    const next = { ...old, key: book.key, detections: book.detections, mark: book.mark, box: book.box };
+    return applyPlace(next, pinChoice(old, book), coverChoice(old, book));
   });
+  if (!keepAbsent) return merged;
+  const incoming = new Set<string>([...merged.map((book) => book.key), ...renamed.keys()]);
+  return [...current.filter((book) => !incoming.has(book.key)), ...merged];
+}
+
+function withoutDisallowed(session: Session, book: Book): Book {
+  const stamped = session.contract === CONTRACT;
+  const walk = stamped && session.mode === "walk";
+  let next = book;
+  const pinMissing = !("pin" in next) || next.pin === undefined || (!finitePin(next.pin) && next.pin !== null);
+  if (!walk || pinMissing) {
+    if (walk && pinMissing) {
+      const placed = pinFor(next, shelfOrigin(session.id));
+      if (placed) next = { ...next, pin: placed };
+      else if ("pin" in next) next = withoutKey(next, "pin");
+    } else if ("pin" in next) next = withoutKey(next, "pin");
+  } else if (finitePin(next.pin)) {
+    next = { ...next, pin: { x: next.pin.x, row: next.pin.row } };
+  }
+  if (!stamped || !("coverId" in next) || next.coverId === undefined || !legalCover(next.coverId)) {
+    if ("coverId" in next) next = withoutKey(next, "coverId");
+  }
+  return next;
 }
 
 export const useShelf = create<State>((setState, getState) => ({
@@ -98,8 +168,8 @@ export const useShelf = create<State>((setState, getState) => ({
   setTab: (tab) => setState({ tab }),
   setAnswer: (answer) => setState({ answer }),
   setAsking: (asking) => setState({ asking }),
-  beginSession: (photoCount, id = crypto.randomUUID()) => {
-    const session: Session = { id, createdAt: new Date().toISOString(), photoCount, books: [] };
+  beginSession: (photoCount, id = crypto.randomUUID(), mode: "still" | "walk" = "still") => {
+    const session: Session = { id, createdAt: new Date().toISOString(), photoCount, books: [], contract: CONTRACT, mode };
     const sessions = [session, ...getState().sessions];
     setState({ sessions, currentId: id, tab: "shelf", answer: "", progress: "" });
     persist(sessions, id);
@@ -108,23 +178,37 @@ export const useShelf = create<State>((setState, getState) => ({
   setBooksFor: (id, books) => {
     const { sessions, currentId } = getState();
     if (!sessions.some((session) => session.id === id)) return;
-    const next = sessions.map((session) => (session.id === id ? { ...session, books } : session));
+    const next = sessions.map((session) => (session.id === id ? { ...session, books: books.map((book) => withoutDisallowed(session, book)) } : session));
     setState({ sessions: next });
     persist(next, currentId);
   },
   mergeBooksFor: (id, books) => {
     const { sessions, currentId } = getState();
     if (!sessions.some((session) => session.id === id)) return;
-    const next = sessions.map((session) => (session.id === id ? { ...session, books: mergeBooks(session.books, books) } : session));
+    const next = sessions.map((session) =>
+      session.id === id
+        ? {
+            ...session,
+            books: mergeBooks(session.books, books, session.contract === CONTRACT && session.mode === "walk").map((book) => withoutDisallowed(session, book)),
+          }
+        : session,
+    );
     setState({ sessions: next });
     persist(next, currentId);
+  },
+  addFrame: (id) => {
+    const { sessions } = getState();
+    if (!sessions.some((session) => session.id === id)) return;
+    const next = sessions.map((session) => (session.id === id ? { ...session, photoCount: session.photoCount + 1 } : session));
+    setState({ sessions: next, currentId: id });
+    persist(next, id);
   },
   patchBookFor: (id, key, patch) => {
     const { sessions, currentId } = getState();
     if (!sessions.some((session) => session.id === id)) return;
     const next = sessions.map((session) =>
       session.id === id
-        ? { ...session, books: session.books.map((book) => (book.key === key ? { ...book, ...patch } : book)) }
+        ? { ...session, books: session.books.map((book) => (book.key === key ? withoutDisallowed(session, { ...book, ...patch }) : book)) }
         : session,
     );
     setState({ sessions: next });

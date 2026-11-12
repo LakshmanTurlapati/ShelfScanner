@@ -7,7 +7,11 @@ import { genreSections, topRated, withScores } from "./pipeline/score";
 import { enrichOne, scanPhotos } from "./scan";
 import { currentSession, useShelf } from "./store";
 import { CameraScan } from "./CameraScan";
+import { bookTitle, CoverGrid } from "./CoverGrid";
+import { coverImageUrl } from "./covers";
 import { MapView } from "./MapView";
+import { loadProfile } from "./profile";
+import { ProfileGate } from "./ProfileGate";
 import { SPLASH_MS, Splash } from "./Splash";
 import { StillCallouts } from "./StillCallouts";
 
@@ -24,11 +28,13 @@ export function App() {
   const books = useMemo(() => withScores(session?.books ?? []), [session?.books]);
   const [drawer, setDrawer] = useState(false);
   const [editing, setEditing] = useState<Book | null>(null);
+  const [detail, setDetail] = useState<Book | null>(null);
   const [question, setQuestion] = useState("");
   const [rawOrder, setRawOrder] = useState(false);
   const [notice, setNotice] = useState("");
   const [live, setLive] = useState(true);
   const [splash, setSplash] = useState(true);
+  const [profileGate, setProfileGate] = useState(false);
   const [stillPhoto, setStillPhoto] = useState<{ url: string; captureId: string } | null>(null);
   const latestUpload = useRef<string | null>(null);
 
@@ -40,6 +46,17 @@ export function App() {
     const timer = setTimeout(() => setSplash(false), SPLASH_MS);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (splash) return;
+    let cancelled = false;
+    void loadProfile().then((profile) => {
+      if (!cancelled && !profile) setProfileGate(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [splash]);
 
   useEffect(() => () => {
     if (stillPhoto) URL.revokeObjectURL(stillPhoto.url);
@@ -103,7 +120,7 @@ export function App() {
             aria-pressed={live}
             onClick={() => setLive((on) => !on)}
           >
-            {live ? "Live view on" : "Live view"}
+            {live ? "Open Shelf" : "Back to Live View"}
           </button>
           <button className="whitespace-nowrap rounded-full border border-[#1f1a17] px-3 py-1 text-sm" type="button" onClick={() => setDrawer(true)}>
             Sessions
@@ -137,13 +154,7 @@ export function App() {
 
           {shelf.tab === "shelf" && stillPhoto?.captureId === session.id && <StillCallouts url={stillPhoto.url} books={books} captureId={session.id} />}
 
-          {shelf.tab === "shelf" && (
-            <ul className="space-y-3">
-              {books.map((book) => (
-                <BookCard key={book.key} book={book} onEdit={() => setEditing(book)} onRetry={() => void enrichOne(book.key, book.detections[0]?.title ?? book.key, book.detections[0]?.author ?? null)} />
-              ))}
-            </ul>
-          )}
+          {shelf.tab === "shelf" && <CoverGrid books={books} onOpen={setDetail} />}
 
           {shelf.tab === "rated" && (
             <section>
@@ -220,9 +231,26 @@ export function App() {
         </aside>
       )}
 
-      {live && <CameraScan onClose={() => setLive(false)} />}
+      {live && <CameraScan onClose={() => setLive(false)} paused={profileGate || splash} />}
 
       {splash && <Splash />}
+
+      {profileGate && <ProfileGate onDone={() => setProfileGate(false)} />}
+
+      {detail && (
+        <CoverDetail
+          book={books.find((book) => book.key === detail.key) ?? detail}
+          onClose={() => setDetail(null)}
+          onEdit={() => {
+            setEditing(books.find((book) => book.key === detail.key) ?? detail);
+            setDetail(null);
+          }}
+          onRetry={() => {
+            const book = books.find((item) => item.key === detail.key) ?? detail;
+            void enrichOne(book.key, book.detections[0]?.title ?? book.key, book.detections[0]?.author ?? null);
+          }}
+        />
+      )}
 
       {editing && (
         <EditDialog
@@ -267,11 +295,25 @@ function Capture({ onFiles, notice, compact = false }: { onFiles: (files: FileLi
   );
 }
 
+function CoverDetail({ book, onClose, onEdit, onRetry }: { book: Book; onClose: () => void; onEdit: () => void; onRetry: () => void }) {
+  const title = bookTitle(book);
+  const src = coverImageUrl(book.coverId);
+  return (
+    <div className="fixed inset-0 z-30 grid place-items-end bg-black/30 p-4 sm:place-items-center" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="max-h-[80dvh] w-full max-w-md overflow-auto rounded-[18px] bg-[#f8f4ef] p-4">
+        <button className="float-right text-sm underline" type="button" onClick={onClose}>Close</button>
+        {src && <img className="mb-3 h-40 w-28 rounded-lg object-cover" src={src} alt="" />}
+        <BookCard book={book} onEdit={onEdit} onRetry={onRetry} />
+      </div>
+    </div>
+  );
+}
+
 function BookCard({ book, onEdit, onRetry }: { book: Book; onEdit: () => void; onRetry: () => void }) {
   const title = book.canonicalTitle ?? book.detections[0]?.title ?? "Unread spine";
   const spine = book.detections[0]?.spineText;
   return (
-    <li className="card p-4 shadow-[0_8px_24px_rgba(22,15,11,0.06)]">
+    <div className="card p-4 shadow-[0_8px_24px_rgba(22,15,11,0.06)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="display text-xl leading-tight">{book.mark ? `${book.mark} ` : ""}{title}</h2>
@@ -293,7 +335,7 @@ function BookCard({ book, onEdit, onRetry }: { book: Book; onEdit: () => void; o
           <button className="underline" type="button" onClick={onEdit}>Edit</button>
         )}
       </div>
-    </li>
+    </div>
   );
 }
 

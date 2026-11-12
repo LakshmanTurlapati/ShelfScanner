@@ -2,6 +2,7 @@ import pLimit from "p-limit";
 import type { BookFactsInput } from "../../shared/schemas.ts";
 import type { Book, Detection, Flag } from "../../shared/types.ts";
 import { embedBooks, enrichBook, quickFacts, readStrip, type QuickFactsItem, type SpineResponse } from "./api";
+import { fillCovers } from "./covers";
 import { anchorsForCapture, labelable } from "./overlay/anchors";
 import { assignMarks, mapStripBox } from "./overlay/geometry";
 import { bookKey, mergeCanonical, mergeOverlaps } from "./pipeline/dedup";
@@ -12,6 +13,8 @@ import { renamedKeys, useShelf } from "./store";
 export type ScanTiming = "strips-encoded" | "first-label" | "all-labels" | "first-rating" | "all-ratings";
 export type ScanOptions = {
   captureId?: string;
+  /** When set, this frame is stored on an existing walk instead of starting another session. */
+  sessionId?: string;
   /** performance.now() of the tap; timings are measured from here. */
   startedAt?: number;
   onTiming?: (name: ScanTiming, ms: number) => void;
@@ -127,7 +130,13 @@ function stopwatch(startedAt: number, onTiming: ScanOptions["onTiming"]) {
 }
 
 // Reads every strip at once and shows each strip's books the moment it returns, then looks them up.
-async function readSession(captureId: string, photos: PhotoStrip[][], tick: (name: ScanTiming) => void): Promise<ScanResult> {
+async function readSession(
+  captureId: string,
+  photos: PhotoStrip[][],
+  tick: (name: ScanTiming) => void,
+  frameId = captureId,
+  retain = false,
+): Promise<ScanResult> {
   const store = useShelf.getState();
   const rows = photos.map((strips) => strips.map((): Detection[] => []));
   const total = photos.reduce((sum, strips) => sum + strips.length, 0);
@@ -150,7 +159,7 @@ async function readSession(captureId: string, photos: PhotoStrip[][], tick: (nam
   const patch = (key: string, next: Partial<Book>) => {
     store.patchBookFor(captureId, key, next);
     const book = sessionBooks(captureId).find((item) => item.key === key);
-    if (book?.avgRating != null && anchorsForCapture([book], captureId).some((anchor) => anchor.showRating)) tick("first-rating");
+    if (book?.avgRating != null && anchorsForCapture([book], frameId).some((anchor) => anchor.showRating)) tick("first-rating");
   };
 
   const applyQuick = (items: QuickFactsItem[]) => {
@@ -232,17 +241,17 @@ async function readSession(captureId: string, photos: PhotoStrip[][], tick: (nam
     }
     stripsDone += 1;
     progress();
-    rows[photoIndex][i] = spines.map((spine, k) => detectionFrom(strip, captureId, photoIndex, i, k, spine));
+    rows[photoIndex][i] = spines.map((spine, k) => detectionFrom(strip, frameId, photoIndex, i, k, spine));
     show();
   })));
   tick("all-labels");
 
   if (!stripsRead) {
-    store.removeSession(captureId);
+    if (!retain) store.removeSession(captureId);
     throw new Error("The shelf could not be read. Try again.");
   }
   if (!rows.some((strips) => strips.some((detections) => detections.length))) {
-    store.removeSession(captureId);
+    if (!retain) store.removeSession(captureId);
     throw new Error("No spines were found. Move closer and read the shelf again.");
   }
   const settled = Promise.all(lookups)
@@ -279,6 +288,7 @@ async function finishSession(captureId: string) {
       // Enrichment remains useful when the map embedding service is unavailable.
     }
   }
+  await fillCovers(captureId);
   store.setProgressFor(captureId, "");
 }
 
@@ -286,7 +296,7 @@ export async function scanPhotos(files: File[], options: ScanOptions = {}): Prom
   const store = useShelf.getState();
   const tick = stopwatch(options.startedAt ?? performance.now(), options.onTiming);
   const captureId = options.captureId ?? crypto.randomUUID();
-  store.beginSession(files.length, captureId);
+  store.beginSession(files.length, captureId, "still");
   let photoStrips: PhotoStrip[][];
   try {
     photoStrips = await Promise.all(files.map((file) => toStrips(file)));
@@ -301,17 +311,20 @@ export async function scanPhotos(files: File[], options: ScanOptions = {}): Prom
 export async function scanCanvas(canvas: HTMLCanvasElement | OffscreenCanvas, options: ScanOptions = {}): Promise<ScanResult> {
   const store = useShelf.getState();
   const tick = stopwatch(options.startedAt ?? performance.now(), options.onTiming);
-  const captureId = options.captureId ?? crypto.randomUUID();
-  store.beginSession(1, captureId);
+  const captureId = options.sessionId ?? options.captureId ?? crypto.randomUUID();
+  const frameId = options.sessionId ? options.captureId ?? crypto.randomUUID() : captureId;
+  const continued = store.sessions.some((session) => session.id === captureId && session.mode === "walk" && session.contract === 1);
+  if (continued) store.addFrame(captureId);
+  else store.beginSession(1, captureId, "walk");
   let strips: PhotoStrip[];
   try {
     strips = await stripsFromCanvas(canvas, { longEdge: 1600, quality: 0.8 });
   } catch (error) {
-    store.removeSession(captureId);
+    if (!continued) store.removeSession(captureId);
     throw error;
   }
   tick("strips-encoded");
-  return readSession(captureId, [strips], tick);
+  return readSession(captureId, [strips], tick, frameId, continued);
 }
 
 export async function enrichOne(key: string, title: string, author: string | null) {
@@ -328,4 +341,5 @@ export async function enrichOne(key: string, title: string, author: string | nul
   });
   const session = useShelf.getState().sessions.find((item) => item.id === sessionId);
   if (session) store.setBooksFor(sessionId, withScores(session.books));
+  await fillCovers(sessionId);
 }
