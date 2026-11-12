@@ -3,7 +3,8 @@
 ## Shipped
 
 - [x] v0.13 Walk the shelf — [archive](milestones/v0.13-ROADMAP.md)
+- [x] v0.14 Android and highlights — [archive](milestones/v0.14-ROADMAP.md)
 
 ## Next
 
-- Highlights: mark a live label and a cover when the book matches the saved profile. Rating order stays as it is.
+The next milestone is not scoped yet.

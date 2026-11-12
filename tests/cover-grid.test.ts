@@ -52,4 +52,22 @@ describe("cover grid", () => {
     expect(html).toContain("Author unknown");
     expect(html).toContain("Cover of Neuromancer");
   });
+
+  it("marks a matching cover without moving it out of walk order", () => {
+    const html = renderToStaticMarkup(createElement(CoverGrid, {
+      books: [
+        book({ key: "Dune", canonicalTitle: "Dune", primaryGenre: "science_fiction", pin: { x: 2, row: 1 } }),
+        book({ key: "The Hobbit", canonicalTitle: "The Hobbit", primaryGenre: "fantasy", pin: { x: 1, row: 1 } }),
+      ],
+      profile: { status: "saved", name: "Ada", genres: ["fantasy"], picks: [] },
+      onOpen: () => undefined,
+    }));
+    expect(html.indexOf("The Hobbit")).toBeLessThan(html.indexOf("Dune"));
+    const hobbit = html.slice(html.lastIndexOf("<button", html.indexOf("Cover of The Hobbit")), html.indexOf("Cover of Dune"));
+    const dune = html.slice(html.lastIndexOf("<button", html.indexOf("Cover of Dune")));
+    expect(hobbit).toContain("For you");
+    expect(hobbit).toContain("ring-[#7c3aed]");
+    expect(dune).not.toContain("For you");
+    expect(dune).not.toContain("ring-[#7c3aed]");
+  });
 });

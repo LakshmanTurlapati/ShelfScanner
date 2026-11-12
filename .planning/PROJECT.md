@@ -4,16 +4,19 @@ A phone web app for walking a library shelf. The camera reads spines, the phone 
 
 ## Current state
 
-v0.13 is implemented on this branch and tagged `v0.13.0`. It is not merged and it is not deployed.
+v0.14 is implemented on this branch and tagged `v0.14.0`. It is not merged and it is not deployed.
 
-A new scan is stamped. A walk keeps books that leave the frame, on the pin from the first sighting. The taste profile is optional and stays on the phone. Cover ids are cached on the server. The Shelf tab is a cover grid in walk order. The camera control says Open Shelf, and the shelf says Back to Live View.
+The same TypeScript app is packaged as an Android debug APK. The live camera is the device camera through the WebView. Packaged calls go to https://shelf-scanner.fly.dev. A saved taste profile highlights a matching live label and cover with "For you". The profile still stays on the phone.
 
 ## Next milestone
 
-Highlight a live label and a cover when the book matches the saved genres or quiz picks. Rating order stays as it is.
+Not scoped yet.
 
 ## Constraints
 
 - The taste profile stays on this phone. It is not sent to the API and it is not stored inside a scan session.
 - The server caches an Open Library cover id. It does not proxy cover JPEG bytes.
-- Sessions saved before this milestone stay unstamped. Writers do not add pins or cover ids to them.
+- Sessions saved before v0.13 stay unstamped.
+- The Android app reuses this TypeScript app.
+- The packaged app calls https://shelf-scanner.fly.dev. Shipping this milestone does not deploy the server.
+- Rating order stays as it is when a book is highlighted.

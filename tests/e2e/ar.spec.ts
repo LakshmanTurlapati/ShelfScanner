@@ -452,6 +452,27 @@ test("a tap during an automatic read adopts it instead of reading twice", async 
   expect(reads).toHaveLength(reads[0]);
 });
 
+test("a saved fantasy profile marks the Hobbit on the live label and the cover", async ({ page }) => {
+  await fakeCamera(page);
+  await hobbitShelf(page);
+  await page.goto("/");
+  const gate = page.getByRole("dialog", { name: "Who is this shelf for?" });
+  await expect(gate).toBeVisible();
+  await gate.getByRole("textbox").fill("Ada");
+  await gate.getByRole("button", { name: "Fantasy" }).click();
+  await gate.getByRole("button", { name: "Save profile" }).click();
+  await expect(gate).toBeHidden();
+  await cameraPlaying(page);
+  await page.getByRole("button", { name: "Read shelf" }).click();
+  const label = page.getByRole("button", { name: "Details for The Hobbit" });
+  await expect(label).toContainText("4.3★");
+  await expect(label).toContainText("For you");
+  await page.getByRole("button", { name: "Open Shelf" }).click();
+  const cover = page.getByRole("button", { name: "Cover of The Hobbit" });
+  await expect(cover).toContainText("For you");
+  await expect(cover).toBeVisible();
+});
+
 test("the splash shows on launch and then gets out of the way", async ({ page }) => {
   await fakeCamera(page);
   await page.goto("/");

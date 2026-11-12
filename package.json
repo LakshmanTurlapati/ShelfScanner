@@ -1,7 +1,7 @@
 {
   "name": "shelf-scanner",
   "private": true,
-  "version": "0.13.0",
+  "version": "0.14.0",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -11,6 +11,8 @@
     "dev:web": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build && tsup && node scripts/copy-prompts.mjs",
+    "build:android": "VITE_API_BASE=https://shelf-scanner.fly.dev vite build && cap sync android",
+    "android:debug": "npm run build:android && cd android && ./gradlew assembleDebug",
     "start": "node dist/server/index.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -22,6 +24,8 @@
     "frames:pull": "tsx scripts/pull-frames.ts"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/core": "^8.6.2",
     "@hono/node-server": "^1.19.6",
     "better-sqlite3": "^12.4.1",
     "fuzzball": "^2.2.3",
@@ -35,6 +39,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
     "@playwright/test": "^1.56.1",
     "@tailwindcss/vite": "^4.1.16",
     "@types/better-sqlite3": "^7.6.13",
