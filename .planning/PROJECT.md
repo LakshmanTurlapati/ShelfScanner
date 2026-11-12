@@ -2,13 +2,15 @@
 
 A phone web app for walking a library shelf. The camera reads spines, the phone keeps what it has already seen, and the shelf tab shows those books as covers.
 
-## Current milestone
+## Current state
 
-v0.13 — Walk the shelf. Phases 1 through 5. Highlighting books that match a saved taste profile is the next milestone.
+v0.13 is implemented on this branch and tagged `v0.13.0`. It is not merged and it is not deployed.
 
-## Core value
+A new scan is stamped. A walk keeps books that leave the frame, on the pin from the first sighting. The taste profile is optional and stays on the phone. Cover ids are cached on the server. The Shelf tab is a cover grid in walk order. The camera control says Open Shelf, and the shelf says Back to Live View.
 
-A person can walk along shelves and still find every book the camera already saw, with a cover, without creating an account.
+## Next milestone
+
+Highlight a live label and a cover when the book matches the saved genres or quiz picks. Rating order stays as it is.
 
 ## Constraints
 

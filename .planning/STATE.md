@@ -2,7 +2,7 @@
 
 ## Current position
 
-Phase 5 — Cover grid: verified. Milestone audit is next.
+v0.13 is complete on this branch. The audit passed. The next milestone is highlights.
 
 ## Decisions
 
