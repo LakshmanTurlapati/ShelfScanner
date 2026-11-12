@@ -1,0 +1,6 @@
+{
+  "version": "0.13.0",
+  "milestone": "v0.13",
+  "git": { "create_tag": true },
+  "workflow": { "research": true, "plan_check": true, "verifier": true }
+}
