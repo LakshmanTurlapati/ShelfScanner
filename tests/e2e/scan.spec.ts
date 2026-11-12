@@ -46,7 +46,7 @@ test("a recorded scan fills all four tabs", async ({ page }) => {
 
   await page.goto("/");
   await dismissProfile(page);
-  await page.getByRole("button", { name: "Live view on" }).click();
+  await page.getByRole("button", { name: "Open Shelf" }).click();
   await page.getByLabel("Shelf photo").setInputFiles("tests/e2e/fixture.jpg");
 
   await expect(page.getByRole("heading", { name: "The Hobbit" })).toBeVisible();

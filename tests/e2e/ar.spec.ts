@@ -49,7 +49,7 @@ test("a failed model read leaves no empty session", async ({ page }) => {
   await page.route("**/api/read-strip**", (route) => route.fulfill({ status: 502, body: "read failed" }));
   await page.goto("/");
   await dismissProfile(page);
-  await page.getByRole("button", { name: "Live view on" }).click();
+  await page.getByRole("button", { name: "Open Shelf" }).click();
   await page.getByLabel("Shelf photo").setInputFiles("tests/e2e/fixture.jpg");
   await expect(page.getByText("The shelf could not be read. Try again.")).toBeVisible();
   await page.getByRole("button", { name: "Sessions" }).click();
@@ -70,7 +70,7 @@ test("photo overlay keeps two physical copies of the same title", async ({ page 
   await noQuickFacts(page);
   await page.goto("/");
   await dismissProfile(page);
-  await page.getByRole("button", { name: "Live view on" }).click();
+  await page.getByRole("button", { name: "Open Shelf" }).click();
   await page.getByLabel("Shelf photo").setInputFiles("eval/golden/crai-spines-17.jpg");
   await expect(page.getByAltText("The shelf you photographed")).toBeVisible();
   await expect(page.locator('[data-testid="still-callouts"] svg g')).toHaveCount(2);
@@ -99,7 +99,7 @@ test("late scan results stay in their own session", async ({ page }) => {
   await noQuickFacts(page);
   await page.goto("/");
   await dismissProfile(page);
-  await page.getByRole("button", { name: "Live view on" }).click();
+  await page.getByRole("button", { name: "Open Shelf" }).click();
   const input = page.getByLabel("Shelf photo");
   await input.setInputFiles("tests/e2e/fixture.jpg");
   await input.setInputFiles("eval/golden/crai-spines-17.jpg");

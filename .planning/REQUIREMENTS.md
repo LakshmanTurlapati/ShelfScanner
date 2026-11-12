@@ -8,8 +8,8 @@
 - [x] REQ-04: `POST /api/covers` resolves Open Library cover ids for ISBN-13s, caches the id or a checked miss, and returns JSON only.
 - [x] REQ-05: After a book has a valid ISBN-13, the phone stores `coverId` as a positive integer or `null`. A failed lookup leaves the field unset.
 - [x] REQ-06: After the splash, a skippable screen asks for a name, preferred genres, and 3 to 5 book pairs. The answers stay on this phone.
-- [ ] REQ-07: Camera reads in one visit share one walk session. Books that leave the frame stay, with the pin from the first sighting. A homography shift moves the shelf origin before the next read.
-- [ ] REQ-08: The camera shows Open Shelf. The shelf shows Back to Live View.
+- [x] REQ-07: Camera reads in one visit share one walk session. Books that leave the frame stay, with the pin from the first sighting. A homography shift moves the shelf origin before the next read.
+- [x] REQ-08: The camera shows Open Shelf. The shelf shows Back to Live View.
 - [ ] REQ-09: The Shelf tab is a cover grid in walk order. A tap opens the book. A missing cover is a title and author tile.
 
 ## Next milestone

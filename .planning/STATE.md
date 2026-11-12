@@ -2,7 +2,7 @@
 
 ## Current position
 
-Phase 3 — Profile screen: verified. Next is Phase 4, walk wiring.
+Phase 4 — Walk wiring: verified. Next is Phase 5, the cover grid.
 
 ## Decisions
 

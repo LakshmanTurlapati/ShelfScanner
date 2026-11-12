@@ -53,7 +53,7 @@ export type Pin = { x: number; row: number };
 export type Book = {
   key: string;
   detections: Detection[];
-  /** First place a walk saw this book. Absent until a later phase records one. */
+  /** First place a walk saw this book, in shelf coordinates. */
   pin?: Pin | null;
   /** Open Library cover id. Absent until lookup; null is a checked miss. */
   coverId?: number | null;

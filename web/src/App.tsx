@@ -117,7 +117,7 @@ export function App() {
             aria-pressed={live}
             onClick={() => setLive((on) => !on)}
           >
-            {live ? "Live view on" : "Live view"}
+            {live ? "Open Shelf" : "Back to Live View"}
           </button>
           <button className="whitespace-nowrap rounded-full border border-[#1f1a17] px-3 py-1 text-sm" type="button" onClick={() => setDrawer(true)}>
             Sessions

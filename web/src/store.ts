@@ -1,6 +1,7 @@
 import { get, set } from "idb-keyval";
 import { create } from "zustand";
 import type { Book, Session } from "../../shared/types.ts";
+import { pinFor, shelfOrigin } from "./walk.ts";
 
 const STORE_KEY = "shelf-scanner-sessions";
 
@@ -19,6 +20,7 @@ type State = {
   beginSession: (photoCount: number, id?: string, mode?: "still" | "walk") => string;
   setBooksFor: (id: string, books: Book[]) => void;
   mergeBooksFor: (id: string, books: Book[]) => void;
+  addFrame: (id: string) => void;
   patchBookFor: (id: string, key: string, patch: Partial<Book>) => void;
   setProgressFor: (id: string, progress: string) => void;
   removeSession: (id: string) => void;
@@ -112,23 +114,32 @@ function applyPlace(book: Book, pin: Book["pin"] | undefined, coverId: number | 
 }
 
 // Fields a lookup has patched survive a re-read, and follow a renamed book; only what comes from the photo is replaced.
-function mergeBooks(current: Book[], books: Book[]) {
+function mergeBooks(current: Book[], books: Book[], keepAbsent = false) {
+  const renamed = renamedKeys(current, books);
   const before = new Map(current.map((book) => [book.key, book]));
-  for (const [from, to] of renamedKeys(current, books)) before.set(to, before.get(from)!);
-  return books.map((book) => {
+  for (const [from, to] of renamed) before.set(to, before.get(from)!);
+  const merged = books.map((book) => {
     const old = before.get(book.key);
     if (!old) return book;
-    const merged = { ...old, key: book.key, detections: book.detections, mark: book.mark, box: book.box };
-    return applyPlace(merged, pinChoice(old, book), coverChoice(old, book));
+    const next = { ...old, key: book.key, detections: book.detections, mark: book.mark, box: book.box };
+    return applyPlace(next, pinChoice(old, book), coverChoice(old, book));
   });
+  if (!keepAbsent) return merged;
+  const incoming = new Set<string>([...merged.map((book) => book.key), ...renamed.keys()]);
+  return [...current.filter((book) => !incoming.has(book.key)), ...merged];
 }
 
 function withoutDisallowed(session: Session, book: Book): Book {
   const stamped = session.contract === CONTRACT;
   const walk = stamped && session.mode === "walk";
   let next = book;
-  if (!walk || !("pin" in next) || next.pin === undefined || (!finitePin(next.pin) && next.pin !== null)) {
-    if ("pin" in next) next = withoutKey(next, "pin");
+  const pinMissing = !("pin" in next) || next.pin === undefined || (!finitePin(next.pin) && next.pin !== null);
+  if (!walk || pinMissing) {
+    if (walk && pinMissing) {
+      const placed = pinFor(next, shelfOrigin(session.id));
+      if (placed) next = { ...next, pin: placed };
+      else if ("pin" in next) next = withoutKey(next, "pin");
+    } else if ("pin" in next) next = withoutKey(next, "pin");
   } else if (finitePin(next.pin)) {
     next = { ...next, pin: { x: next.pin.x, row: next.pin.row } };
   }
@@ -175,10 +186,22 @@ export const useShelf = create<State>((setState, getState) => ({
     const { sessions, currentId } = getState();
     if (!sessions.some((session) => session.id === id)) return;
     const next = sessions.map((session) =>
-      session.id === id ? { ...session, books: mergeBooks(session.books, books).map((book) => withoutDisallowed(session, book)) } : session,
+      session.id === id
+        ? {
+            ...session,
+            books: mergeBooks(session.books, books, session.contract === CONTRACT && session.mode === "walk").map((book) => withoutDisallowed(session, book)),
+          }
+        : session,
     );
     setState({ sessions: next });
     persist(next, currentId);
+  },
+  addFrame: (id) => {
+    const { sessions } = getState();
+    if (!sessions.some((session) => session.id === id)) return;
+    const next = sessions.map((session) => (session.id === id ? { ...session, photoCount: session.photoCount + 1 } : session));
+    setState({ sessions: next, currentId: id });
+    persist(next, id);
   },
   patchBookFor: (id, key, patch) => {
     const { sessions, currentId } = getState();
