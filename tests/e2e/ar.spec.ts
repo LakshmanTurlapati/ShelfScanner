@@ -444,8 +444,10 @@ test("a tap during an automatic read adopts it instead of reading twice", async 
   const button = page.getByRole("button", { name: "Reading…" });
   await button.click();
   await expect(button).toBeDisabled();
+  const enrich = page.waitForResponse((response) => response.url().includes("/api/enrich") && response.ok());
   release();
-  await expect(page.getByRole("button", { name: "Details for The Hobbit" })).toContainText("4.3★");
+  await enrich;
+  await expect(page.getByRole("button", { name: "Details for The Hobbit" })).toContainText("4.3★", { timeout: 15_000 });
   await expect(page.getByRole("button", { name: "Read again" })).toBeEnabled();
   // Long enough for another automatic read if the tracked view were not already covered.
   await page.waitForTimeout(3500);
@@ -471,6 +473,16 @@ test("a saved fantasy profile marks the Hobbit on the live label and the cover",
   const cover = page.getByRole("button", { name: "Cover of The Hobbit" });
   await expect(cover).toContainText("For you");
   await expect(cover).toBeVisible();
+});
+
+test("an offline read tells you the shelf needs a connection", async ({ page, context }) => {
+  await fakeCamera(page);
+  await page.goto("/");
+  await dismissProfile(page);
+  await cameraPlaying(page);
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "Read shelf" }).click();
+  await expect(page.getByText("You are offline. Try again when you have a connection.")).toBeVisible();
 });
 
 test("the splash shows on launch and then gets out of the way", async ({ page }) => {

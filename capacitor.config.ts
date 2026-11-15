@@ -4,7 +4,9 @@ import type { CapacitorConfig } from "@capacitor/cli";
 // getUserMedia, which the WebView satisfies from the device camera. @capacitor/camera
 // only returns a still photo, so it cannot feed the homography tracker.
 // CapacitorHttp performs the Fly calls outside the WebView so the packaged origin
-// does not need a CORS change on the server.
+// does not need a CORS change on the server. Ask the shelf is the exception:
+// ShelfNative reads that response on the device and forwards each chunk, because
+// CapacitorHttp waits for the whole body.
 const config: CapacitorConfig = {
   appId: "app.shelfscanner.phone",
   appName: "Shelf Scanner",
@@ -15,6 +17,11 @@ const config: CapacitorConfig = {
   plugins: {
     CapacitorHttp: {
       enabled: true,
+    },
+    // DARK means light status and navigation icons on the #141110 bars.
+    // The default follows the device theme and paints dark icons on this bar.
+    SystemBars: {
+      style: "DARK",
     },
   },
 };

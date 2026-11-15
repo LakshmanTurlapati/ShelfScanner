@@ -25,9 +25,37 @@ describe("android shell", () => {
     expect(config).toContain('webDir: "dist/web"');
     expect(config).toContain("CapacitorHttp");
     expect(config).toContain("enabled: true");
+    expect(config).toContain('style: "DARK"');
     expect(scripts).not.toContain('"@capacitor/camera"');
     expect(scripts).toContain("VITE_API_BASE=https://shelf-scanner.fly.dev");
     expect(manifest).toContain("android.permission.CAMERA");
     expect(manifest).toContain("android.permission.INTERNET");
+    expect(manifest).toContain("android.permission.ACCESS_NETWORK_STATE");
+    expect(manifest).not.toContain("RECORD_AUDIO");
+    expect(manifest).toContain('android:allowBackup="false"');
+    expect(manifest).toContain('android:fullBackupContent="@xml/backup_rules"');
+    expect(manifest).toContain('android:dataExtractionRules="@xml/data_extraction_rules"');
+    expect(manifest).toContain('android:usesCleartextTraffic="false"');
+    expect(read("../android/app/src/main/res/values/strings.xml")).toContain("Shelf Scanner");
+    expect(read("../android/app/build.gradle")).toContain('versionName "0.14.1"');
+    expect(read("../android/app/build.gradle")).toContain("versionCode 2");
+    expect(read("../android/app/build.gradle")).toContain("minifyEnabled true");
+    expect(read("../android/app/build.gradle")).toContain("SHELF_KEYSTORE");
+  });
+
+  it("uses the resting shelf mark instead of the Capacitor launcher", () => {
+    const logo = read("../web/public/logo.svg");
+    const foreground = read("../android/app/src/main/res/drawable/ic_launcher_foreground.xml");
+    const adaptive = read("../android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml");
+    for (const color of ["#2f5d3a", "#a58e5f", "#8a3b2c", "#3b5b6b", "#ff6b35", "#5a4632"]) {
+      expect(logo).toContain(color);
+      expect(foreground.toLowerCase()).toContain(color);
+    }
+    expect(logo).not.toContain("Shelf Scanner");
+    expect(foreground).not.toContain("#26A69A");
+    expect(read("../android/app/src/main/res/values/ic_launcher_background.xml")).toContain("#141110");
+    expect(adaptive).toContain("@drawable/ic_launcher_foreground");
+    expect(adaptive).toContain("@drawable/ic_launcher_monochrome");
+    expect(read("../web/index.html")).toContain('href="/logo.svg"');
   });
 });

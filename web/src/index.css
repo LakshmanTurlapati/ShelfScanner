@@ -12,6 +12,28 @@
     min-height: 100dvh;
   }
 
+  /* Android 15 draws the page under the system bars. These strips keep the light icons readable. */
+  body::before,
+  body::after {
+    content: "";
+    position: fixed;
+    left: 0;
+    right: 0;
+    z-index: 80;
+    background: #141110;
+    pointer-events: none;
+  }
+
+  body::before {
+    top: 0;
+    height: env(safe-area-inset-top, 0px);
+  }
+
+  body::after {
+    bottom: 0;
+    height: env(safe-area-inset-bottom, 0px);
+  }
+
   button, input, textarea {
     font: inherit;
   }

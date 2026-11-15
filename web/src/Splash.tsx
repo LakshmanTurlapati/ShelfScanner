@@ -39,7 +39,7 @@ export function Splash() {
         <h1 className="display m-0 text-[40px] leading-none">Shelf Scanner</h1>
         <p className="mt-2 text-sm text-[#a99283]">Point at a shelf. Find the best book on it.</p>
       </div>
-      <p className="mono absolute inset-x-0 bottom-10 m-0 text-center text-xs tracking-[0.04em] text-[#a99283]">
+      <p className="mono absolute inset-x-0 m-0 text-center text-xs tracking-[0.04em] text-[#a99283]" style={{ bottom: "calc(2.5rem + env(safe-area-inset-bottom, 0px))" }}>
         v{major}.{minor} | By Lakshman Turlapati
       </p>
     </div>

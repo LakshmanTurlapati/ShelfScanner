@@ -1,5 +1,6 @@
 import type { BookFactsInput } from "../../shared/schemas.ts";
 import type { Flag } from "../../shared/types.ts";
+import { isNativeApp, ShelfNative } from "./native.ts";
 
 export type SpineResponse = {
   spines: Array<{
@@ -47,7 +48,32 @@ export function jpegFile(blob: Blob, name: string) {
   return new File([blob], name, { type: blob.type || "image/jpeg" });
 }
 
+export class OfflineError extends Error {
+  constructor() {
+    super("You are offline. Try again when you have a connection.");
+    this.name = "OfflineError";
+  }
+}
+
+function assertOnline() {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) throw new OfflineError();
+}
+
+async function ensureOnline() {
+  if (isNativeApp()) {
+    try {
+      const status = await ShelfNative.isOnline();
+      if (!status.online) throw new OfflineError();
+      return;
+    } catch (error) {
+      if (error instanceof OfflineError) throw error;
+    }
+  }
+  assertOnline();
+}
+
 async function send(input: string, init: RequestInit, retry = true) {
+  await ensureOnline();
   const target = apiUrl(input);
   const res = await fetch(target, init);
   if (retry && (res.status === 502 || res.status === 504)) {
@@ -102,12 +128,7 @@ export async function saveFrame(image: Blob, meta: unknown) {
   await fetch(apiUrl("/api/frames"), { method: "POST", body: form });
 }
 
-export async function askShelf(question: string, books: unknown[], onText: (chunk: string) => void) {
-  const res = await send("/api/ask", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ question, books }),
-  });
+async function readTextStream(res: Response, onText: (chunk: string) => void) {
   const reader = res.body?.getReader();
   if (!reader) return;
   const decoder = new TextDecoder();
@@ -116,4 +137,46 @@ export async function askShelf(question: string, books: unknown[], onText: (chun
     if (done) break;
     onText(decoder.decode(value, { stream: true }));
   }
+}
+
+// The packaged app does not use CapacitorHttp for this call. That client waits
+// for the whole body, so the answer would appear in one piece.
+async function streamNatively(url: string, body: string, onText: (chunk: string) => void) {
+  let attempt = 0;
+  while (attempt < 2) {
+    attempt += 1;
+    const requestId = crypto.randomUUID();
+    let sent = false;
+    const handle = await ShelfNative.addListener("chunk", (event) => {
+      if (event.requestId !== requestId || !event.text) return;
+      sent = true;
+      onText(event.text);
+    });
+    try {
+      await ShelfNative.stream({ url, body, requestId });
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Ask failed.";
+      if (!sent && attempt === 1 && (message.includes("502") || message.includes("504"))) continue;
+      throw new Error(message);
+    } finally {
+      await handle.remove();
+    }
+  }
+}
+
+export async function askShelf(question: string, books: unknown[], onText: (chunk: string) => void) {
+  await ensureOnline();
+  const body = JSON.stringify({ question, books });
+  const url = apiUrl("/api/ask");
+  if (isNativeApp()) {
+    await streamNatively(url, body, onText);
+    return;
+  }
+  const res = await send("/api/ask", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
+  await readTextStream(res, onText);
 }

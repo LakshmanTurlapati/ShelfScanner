@@ -1,5 +1,7 @@
+import { App as NativeApp } from "@capacitor/app";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { bookMatchesProfile } from "./match";
+import { CAMERA_INSECURE, cameraNotice, isNativeApp, openCameraSettings } from "./native";
 import { anchorsForCapture } from "./overlay/anchors";
 import type { Profile } from "./profile";
 import { saveFrame } from "./api";
@@ -155,7 +157,11 @@ export function CameraScan({ onClose, paused = false, profile = null }: { onClos
   useEffect(() => {
     const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
+    window.visualViewport?.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      window.visualViewport?.removeEventListener("resize", resize);
+    };
   }, []);
 
   useEffect(() => {
@@ -180,6 +186,12 @@ export function CameraScan({ onClose, paused = false, profile = null }: { onClos
         setStale(true);
       }
       if (reply.type === "step" && performance.now() - lastTracked.current <= GIVE_UP_MS) return;
+      // Keep the tracker through a slow read so a later good frame can still place its labels.
+      if (reply.type === "step" && inFlight.current) {
+        setProjection(null);
+        setLost(true);
+        return;
+      }
       activeId.current = null;
       worker.postMessage({ type: "end", captureId: reply.captureId });
       setProjection(null);
@@ -198,33 +210,72 @@ export function CameraScan({ onClose, paused = false, profile = null }: { onClos
     };
   }, []);
 
+  const restartCamera = useRef<() => void>(() => undefined);
   useEffect(() => {
     const video = videoRef.current;
     let stream: MediaStream | null = null;
     let cancelled = false;
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setNotice("Camera access needs HTTPS and a supported browser. Use a shelf photo instead.");
-      return;
-    }
-    void navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: false,
-    })
-      .then((next) => {
-        stream = next;
-        if (cancelled) {
-          next.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        if (video) {
+    let starting = false;
+    const stop = () => {
+      stream?.getTracks().forEach((track) => track.stop());
+      stream = null;
+    };
+    const start = () => {
+      if (cancelled || !video || starting) return;
+      if (stream?.getVideoTracks().some((track) => track.readyState === "live")) return;
+      starting = true;
+      stop();
+      if (!navigator.mediaDevices?.getUserMedia) {
+        starting = false;
+        setNotice(CAMERA_INSECURE);
+        return;
+      }
+      void navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      })
+        .then((next) => {
+          starting = false;
+          if (cancelled) {
+            next.getTracks().forEach((track) => track.stop());
+            return;
+          }
+          stream = next;
+          next.getVideoTracks().forEach((track) => {
+            track.onended = () => {
+              if (!cancelled && document.visibilityState === "visible") start();
+            };
+          });
           video.srcObject = next;
           void video.play().catch(() => setNotice("Tap Read shelf after allowing the camera."));
-        }
-      })
-      .catch(() => setNotice("The camera is unavailable. Use a shelf photo instead."));
+        })
+        .catch(() => {
+          starting = false;
+          void cameraNotice().then((message) => {
+            if (!cancelled) setNotice(message);
+          });
+        });
+    };
+    restartCamera.current = start;
+    start();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") start();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
-      stream?.getTracks().forEach((track) => track.stop());
+      document.removeEventListener("visibilitychange", onVisible);
+      stop();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    const subscription = NativeApp.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) restartCamera.current();
+    });
+    return () => {
+      void subscription.then((handle) => handle.remove());
     };
   }, []);
 
@@ -422,7 +473,7 @@ export function CameraScan({ onClose, paused = false, profile = null }: { onClos
           ))}
         </>
       )}
-      <div className="absolute left-4 top-4 flex gap-2">
+      <div className="absolute left-4 flex gap-2" style={{ top: "calc(env(safe-area-inset-top, 0px) + 1rem)" }}>
         <button className="rounded-full bg-[#ff6b35] px-3 py-1 font-semibold text-[#1f1a17]" type="button" onClick={() => void readShelf(false)} disabled={reading === "tap"} aria-busy={reading !== null}>
           {reading ? "Reading…" : captureId ? "Read again" : "Read shelf"}
         </button>
@@ -437,14 +488,19 @@ export function CameraScan({ onClose, paused = false, profile = null }: { onClos
         </button>
       </div>
       {status && (
-        <p className="absolute left-1/2 top-16 w-max max-w-[85vw] -translate-x-1/2 rounded-xl bg-black/75 px-3 py-2 text-center text-sm">
+        <p className="absolute left-1/2 w-max max-w-[85vw] -translate-x-1/2 rounded-xl bg-black/75 px-3 py-2 text-center text-sm" style={{ top: "calc(env(safe-area-inset-top, 0px) + 4rem)" }}>
           {status}
         </p>
       )}
       {notice.includes("camera") || notice.includes("Camera") ? (
-        <button className="absolute left-4 top-28 rounded-full bg-[#fffaf6] px-3 py-1 text-[#1f1a17]" type="button" onClick={onClose}>Use a shelf photo</button>
+        <div className="absolute left-4 flex gap-2" style={{ top: "calc(env(safe-area-inset-top, 0px) + 7rem)" }}>
+          <button className="rounded-full bg-[#fffaf6] px-3 py-1 text-[#1f1a17]" type="button" onClick={onClose}>Use a shelf photo</button>
+          {notice.includes("Camera access is off") && isNativeApp() ? (
+            <button className="rounded-full bg-[#fffaf6] px-3 py-1 text-[#1f1a17]" type="button" onClick={() => void openCameraSettings()}>Open settings</button>
+          ) : null}
+        </div>
       ) : null}
-      <div className="absolute inset-x-0 bottom-0 rounded-tl-[18px] rounded-tr-2xl bg-[#fffaf6] p-3 text-[#1f1a17]">
+      <div className="absolute inset-x-0 bottom-0 rounded-tl-[18px] rounded-tr-2xl bg-[#fffaf6] p-3 text-[#1f1a17]" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}>
         {selectedBook ? (
           <div className="max-h-44 overflow-auto">
             <button className="float-right text-sm underline" type="button" onClick={() => setSelected(null)}>Close</button>

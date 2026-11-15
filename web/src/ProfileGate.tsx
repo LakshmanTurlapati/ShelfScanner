@@ -33,7 +33,7 @@ export function ProfileGate({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[70] overflow-auto bg-[#fffaf6] px-4 py-8 text-[#1f1a17]" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+    <div className="fixed inset-0 z-[70] overflow-auto bg-[#fffaf6] px-4 py-8 text-[#1f1a17]" style={{ paddingTop: "calc(2rem + env(safe-area-inset-top, 0px))", paddingBottom: "calc(2rem + env(safe-area-inset-bottom, 0px))" }} role="dialog" aria-modal="true" aria-labelledby="profile-title">
       <div className="mx-auto flex max-w-3xl flex-col gap-4">
         <h2 id="profile-title" className="display text-[30px] leading-none">Who is this shelf for?</h2>
         <p className="text-sm text-[#6a584d]">This stays on this phone. You can skip it.</p>

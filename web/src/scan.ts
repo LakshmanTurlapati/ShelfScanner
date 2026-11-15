@@ -1,7 +1,7 @@
 import pLimit from "p-limit";
 import type { BookFactsInput } from "../../shared/schemas.ts";
 import type { Book, Detection, Flag } from "../../shared/types.ts";
-import { embedBooks, enrichBook, quickFacts, readStrip, type QuickFactsItem, type SpineResponse } from "./api";
+import { embedBooks, enrichBook, OfflineError, quickFacts, readStrip, type QuickFactsItem, type SpineResponse } from "./api";
 import { fillCovers } from "./covers";
 import { anchorsForCapture, labelable } from "./overlay/anchors";
 import { assignMarks, mapStripBox } from "./overlay/geometry";
@@ -231,13 +231,17 @@ async function readSession(
     lookUp(books);
   };
 
+  let unreachable = false;
+  let offline = false;
   await Promise.all(photos.flatMap((strips, photoIndex) => strips.map(async (strip, i) => {
     let spines: SpineResponse["spines"] = [];
     try {
       spines = (await readStrip(strip.blob, i + 1, strips.length)).spines;
       stripsRead += 1;
-    } catch {
+    } catch (err) {
       // Keep usable strips when one model request fails.
+      if (err instanceof OfflineError) offline = true;
+      else if (err instanceof TypeError) unreachable = true;
     }
     stripsDone += 1;
     progress();
@@ -248,6 +252,8 @@ async function readSession(
 
   if (!stripsRead) {
     if (!retain) store.removeSession(captureId);
+    if (offline || (unreachable && typeof navigator !== "undefined" && navigator.onLine === false)) throw new OfflineError();
+    if (unreachable) throw new Error("The shelf could not be reached. Check the connection and try again.");
     throw new Error("The shelf could not be read. Try again.");
   }
   if (!rows.some((strips) => strips.some((detections) => detections.length))) {
