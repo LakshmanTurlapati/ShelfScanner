@@ -7,3 +7,14 @@ playwright-report
 test-results
 blob-report
 *.tsbuildinfo
+android/.gradle
+android/build
+android/app/build
+android/local.properties
+android/captures
+android/.idea
+*.apk
+*.aab
+*.jks
+*.keystore
+keystore.properties

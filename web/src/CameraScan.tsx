@@ -1,5 +1,9 @@
+import { App as NativeApp } from "@capacitor/app";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { bookMatchesProfile } from "./match";
+import { CAMERA_INSECURE, cameraNotice, isNativeApp, openCameraSettings } from "./native";
 import { anchorsForCapture } from "./overlay/anchors";
+import type { Profile } from "./profile";
 import { saveFrame } from "./api";
 import { AUTO_READ_KEY, createAutoRead } from "./overlay/auto-read";
 import { captureFrames, type FrameState } from "./overlay/frames";
@@ -10,8 +14,8 @@ import { grayFromRGBA, projectAnchor, type GrayFrame, type Mat3 } from "./overla
 import type { TrackingReply } from "./overlay/tracking.worker";
 import { withScores } from "./pipeline/score";
 import { scanCanvas, type ScanTiming } from "./scan";
-import { currentSession, useShelf } from "./store";
-import type { Book } from "../../shared/types.ts";
+import { useShelf } from "./store";
+import { noteShelfShift, shelfShift } from "./walk";
 
 // Labels stay where they were through a brief tracking failure, then hide; the capture is given
 // up when no step has been tracked for longer.
@@ -65,7 +69,7 @@ function grayFrame(video: HTMLVideoElement, canvas: HTMLCanvasElement, width: nu
   return pixels && { gray: grayFromRGBA(pixels.data, width, height), width, height };
 }
 
-export function CameraScan({ onClose }: { onClose: () => void }) {
+export function CameraScan({ onClose, paused = false, profile = null }: { onClose: () => void; paused?: boolean; profile?: Profile | null }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const samplingCanvas = useRef<HTMLCanvasElement | null>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -80,13 +84,13 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
   const frameState = useRef<FrameState | null>(null);
   const slots = useRef<ReadonlyMap<string, LiveSlot>>(new Map());
   const inFlight = useRef<"auto" | "tap" | null>(null);
-  const lastScan = useRef<string | null>(null);
+  const walkSessionId = useRef<string | null>(null);
   const autoGate = useRef({ enabled: false, covered: false, sheetOpen: false });
   const latestSample = useRef<GrayFrame | null>(null);
   const readRef = useRef<(auto: boolean) => Promise<void>>(async () => undefined);
   const [autoRead] = useState(createAutoRead);
   const shelf = useShelf();
-  const session = currentSession(shelf);
+  const session = shelf.sessions.find((item) => item.id === walkSessionId.current) ?? null;
   const books = useMemo(() => withScores(session?.books ?? []), [session?.books]);
   const [captureId, setCaptureId] = useState<string | null>(null);
   const [projection, setProjection] = useState<{ h: Mat3; width: number; height: number } | null>(null);
@@ -100,10 +104,9 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
 
-  const currentBooks = session?.id === captureId ? books : [];
-  const anchors = anchorsForCapture(currentBooks, captureId ?? "");
+  const anchors = anchorsForCapture(books, captureId ?? "");
   const placedIds = new Set(anchors.map((anchor) => anchor.id));
-  const review = currentBooks.flatMap((book) =>
+  const review = books.flatMap((book) =>
     book.detections.filter((detection) => detection.captureId === captureId && !placedIds.has(detection.id ?? "")).map((detection) => ({
       id: detection.id ?? `${book.key}:${detection.strip}:${detection.position}`,
       title: detection.title.trim() || "Unread spine",
@@ -128,15 +131,20 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
   const byId = new Map(anchors.map((anchor) => [anchor.id, anchor]));
   const shown = labels.map((label) => {
     const anchor = byId.get(label.id)!;
-    return { ...label, title: anchor.title, rating: anchor.showRating ? anchor.book.avgRating : null };
+    return {
+      ...label,
+      title: anchor.title,
+      rating: anchor.showRating ? anchor.book.avgRating : null,
+      forYou: bookMatchesProfile(anchor.book, profile),
+    };
   });
-  const baseStatus = notice || (lost ? "Tracking lost. Read the shelf again." : session?.id === captureId ? shelf.progress : "");
+  const baseStatus = notice || (lost ? "Tracking lost. Read the shelf again." : session ? shelf.progress : "");
   const status = auto && autoPaused ? `${baseStatus ? `${baseStatus} ` : ""}Auto-read paused. Tap Read shelf to resume.` : baseStatus;
 
   useEffect(() => {
     frameState.current = { captureId, status, reading: reading !== null, lost, viewport, anchors: anchors.length, review: review.length, labels: shown };
     if (!stale) slots.current = new Map(labels.map((label) => [label.id, label]));
-    autoGate.current = { enabled: auto, covered: Boolean(projection) && !lost && anchors.length > 0, sheetOpen: Boolean(selectedBook) || showReview };
+    autoGate.current = { enabled: auto && !paused, covered: Boolean(projection) && !lost && anchors.length > 0, sheetOpen: Boolean(selectedBook) || showReview };
     readRef.current = readShelf;
   });
 
@@ -149,7 +157,11 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
+    window.visualViewport?.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      window.visualViewport?.removeEventListener("resize", resize);
+    };
   }, []);
 
   useEffect(() => {
@@ -174,6 +186,12 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
         setStale(true);
       }
       if (reply.type === "step" && performance.now() - lastTracked.current <= GIVE_UP_MS) return;
+      // Keep the tracker through a slow read so a later good frame can still place its labels.
+      if (reply.type === "step" && inFlight.current) {
+        setProjection(null);
+        setLost(true);
+        return;
+      }
       activeId.current = null;
       worker.postMessage({ type: "end", captureId: reply.captureId });
       setProjection(null);
@@ -192,33 +210,72 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
+  const restartCamera = useRef<() => void>(() => undefined);
   useEffect(() => {
     const video = videoRef.current;
     let stream: MediaStream | null = null;
     let cancelled = false;
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setNotice("Camera access needs HTTPS and a supported browser. Use a shelf photo instead.");
-      return;
-    }
-    void navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: false,
-    })
-      .then((next) => {
-        stream = next;
-        if (cancelled) {
-          next.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        if (video) {
+    let starting = false;
+    const stop = () => {
+      stream?.getTracks().forEach((track) => track.stop());
+      stream = null;
+    };
+    const start = () => {
+      if (cancelled || !video || starting) return;
+      if (stream?.getVideoTracks().some((track) => track.readyState === "live")) return;
+      starting = true;
+      stop();
+      if (!navigator.mediaDevices?.getUserMedia) {
+        starting = false;
+        setNotice(CAMERA_INSECURE);
+        return;
+      }
+      void navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      })
+        .then((next) => {
+          starting = false;
+          if (cancelled) {
+            next.getTracks().forEach((track) => track.stop());
+            return;
+          }
+          stream = next;
+          next.getVideoTracks().forEach((track) => {
+            track.onended = () => {
+              if (!cancelled && document.visibilityState === "visible") start();
+            };
+          });
           video.srcObject = next;
           void video.play().catch(() => setNotice("Tap Read shelf after allowing the camera."));
-        }
-      })
-      .catch(() => setNotice("The camera is unavailable. Use a shelf photo instead."));
+        })
+        .catch(() => {
+          starting = false;
+          void cameraNotice().then((message) => {
+            if (!cancelled) setNotice(message);
+          });
+        });
+    };
+    restartCamera.current = start;
+    start();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") start();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
-      stream?.getTracks().forEach((track) => track.stop());
+      document.removeEventListener("visibilitychange", onVisible);
+      stop();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    const subscription = NativeApp.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) restartCamera.current();
+    });
+    return () => {
+      void subscription.then((handle) => handle.remove());
     };
   }, []);
 
@@ -314,10 +371,16 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
     let frame: HTMLCanvasElement | null = null;
     let settled: Promise<void> = Promise.resolve();
     let error = "";
-    const id = crypto.randomUUID();
-    latestRead.current = id;
-    activeId.current = id;
-    setCaptureId(id);
+    const sessionId = walkSessionId.current && useShelf.getState().sessions.some((item) => item.id === walkSessionId.current)
+      ? walkSessionId.current
+      : crypto.randomUUID();
+    walkSessionId.current = sessionId;
+    const prior = useShelf.getState().sessions.find((item) => item.id === sessionId);
+    if (prior) noteShelfShift(sessionId, projection && !lost ? shelfShift(projection.h, projection.width, projection.height) : 1);
+    const frameId = crypto.randomUUID();
+    latestRead.current = frameId;
+    activeId.current = frameId;
+    setCaptureId(frameId);
     worker.postMessage({ type: "reset" });
     try {
       const full = document.createElement("canvas");
@@ -335,17 +398,18 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
       const keyframe = videoPixels(video, (samplingCanvas.current ??= document.createElement("canvas")), trackWidth, trackHeight);
       if (!keyframe) throw new Error("This browser cannot track the shelf.");
       const t = frameTime.current ?? performance.now();
-      worker.postMessage({ type: "begin", captureId: id, t, width: trackWidth, height: trackHeight, rgba: keyframe.data.buffer }, [keyframe.data.buffer]);
+      worker.postMessage({ type: "begin", captureId: frameId, t, width: trackWidth, height: trackHeight, rgba: keyframe.data.buffer }, [keyframe.data.buffer]);
       ({ settled } = await scanCanvas(full, {
-        captureId: id,
+        captureId: frameId,
+        sessionId,
         startedAt: started,
         onTiming: (name, ms) => { timings[TIMING_FIELDS[name]] = ms; },
       }));
     } catch (caught) {
       error = caught instanceof Error ? caught.message : "The scan failed.";
       // Tracking loss may already have cleared activeId, but the failure is still this read's to report.
-      if (latestRead.current === id) {
-        if (activeId.current === id) {
+      if (latestRead.current === frameId) {
+        if (activeId.current === frameId) {
           activeId.current = null;
           worker.postMessage({ type: "reset" });
         }
@@ -354,30 +418,17 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
         setNotice(error);
       }
     } finally {
-      const books = useShelf.getState().sessions.find((item) => item.id === id)?.books ?? [];
-      const labelled = anchorsForCapture(books, id).length > 0;
+      const seen = useShelf.getState().sessions.find((item) => item.id === sessionId)?.books ?? [];
+      const labelled = anchorsForCapture(seen, frameId).length > 0;
       autoRead.finished(inFlight.current === "auto", labelled, performance.now());
-      if (labelled) replaceRepeatScan(id, books);
       inFlight.current = null;
       setReading(null);
       setAutoPaused(autoRead.paused());
       if (frame) {
         const size = { width: sourceSize.current.width, height: sourceSize.current.height };
-        void saveReadFrame(frame, settled, { captureId: id, video: size, timings, error: error || null, auto }).catch(() => undefined);
+        void saveReadFrame(frame, settled, { captureId: frameId, video: size, timings, error: error || null, auto }).catch(() => undefined);
       }
     }
-  }
-
-  // Automatic re-reads of the same shelf would pile up in the scan history; a new scan whose
-  // books mostly match the previous camera scan replaces it.
-  function replaceRepeatScan(id: string, books: Book[]) {
-    const previous = lastScan.current;
-    lastScan.current = id;
-    if (!previous || previous === id) return;
-    const before = useShelf.getState().sessions.find((item) => item.id === previous)?.books ?? [];
-    const keys = new Set(before.map((book) => book.key));
-    const shared = books.filter((book) => keys.has(book.key)).length;
-    if (before.length && shared / Math.min(before.length, books.length) >= 0.5) useShelf.getState().removeSession(previous);
   }
 
   function toggleAuto() {
@@ -410,18 +461,19 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
               key={label.id}
               type="button"
               data-spine-id={label.id}
-              className="absolute flex h-[43px] w-[min(164px,42vw)] items-center gap-2 rounded-lg border border-[rgba(255,140,66,0.6)] bg-[rgba(32,25,23,0.9)] px-2 text-left text-xs text-[#fffaf6] shadow-[0_10px_15px_rgba(0,0,0,0.3)]"
+              className={`absolute flex h-[43px] w-[min(164px,42vw)] items-center gap-2 rounded-lg border bg-[rgba(32,25,23,0.9)] px-2 text-left text-xs text-[#fffaf6] shadow-[0_10px_15px_rgba(0,0,0,0.3)] ${label.forYou ? "border-[#c4b5fd] ring-2 ring-[#7c3aed]" : "border-[rgba(255,140,66,0.6)]"}`}
               style={{ left: label.labelX, top: label.labelY }}
               onClick={() => { setSelected(label.id); setShowReview(false); }}
               aria-label={`Details for ${label.title}`}
             >
               <span className="min-w-0 flex-1 truncate">{label.title}</span>
+              {label.forYou && <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-[#e9d5ff]">For you</span>}
               {label.rating != null && <span className="shrink-0">{label.rating.toFixed(1)}★</span>}
             </button>
           ))}
         </>
       )}
-      <div className="absolute left-4 top-4 flex gap-2">
+      <div className="absolute left-4 flex gap-2" style={{ top: "calc(env(safe-area-inset-top, 0px) + 1rem)" }}>
         <button className="rounded-full bg-[#ff6b35] px-3 py-1 font-semibold text-[#1f1a17]" type="button" onClick={() => void readShelf(false)} disabled={reading === "tap"} aria-busy={reading !== null}>
           {reading ? "Reading…" : captureId ? "Read again" : "Read shelf"}
         </button>
@@ -436,14 +488,19 @@ export function CameraScan({ onClose }: { onClose: () => void }) {
         </button>
       </div>
       {status && (
-        <p className="absolute left-1/2 top-16 w-max max-w-[85vw] -translate-x-1/2 rounded-xl bg-black/75 px-3 py-2 text-center text-sm">
+        <p className="absolute left-1/2 w-max max-w-[85vw] -translate-x-1/2 rounded-xl bg-black/75 px-3 py-2 text-center text-sm" style={{ top: "calc(env(safe-area-inset-top, 0px) + 4rem)" }}>
           {status}
         </p>
       )}
       {notice.includes("camera") || notice.includes("Camera") ? (
-        <button className="absolute left-4 top-28 rounded-full bg-[#fffaf6] px-3 py-1 text-[#1f1a17]" type="button" onClick={onClose}>Use a shelf photo</button>
+        <div className="absolute left-4 flex gap-2" style={{ top: "calc(env(safe-area-inset-top, 0px) + 7rem)" }}>
+          <button className="rounded-full bg-[#fffaf6] px-3 py-1 text-[#1f1a17]" type="button" onClick={onClose}>Use a shelf photo</button>
+          {notice.includes("Camera access is off") && isNativeApp() ? (
+            <button className="rounded-full bg-[#fffaf6] px-3 py-1 text-[#1f1a17]" type="button" onClick={() => void openCameraSettings()}>Open settings</button>
+          ) : null}
+        </div>
       ) : null}
-      <div className="absolute inset-x-0 bottom-0 rounded-tl-[18px] rounded-tr-2xl bg-[#fffaf6] p-3 text-[#1f1a17]">
+      <div className="absolute inset-x-0 bottom-0 rounded-tl-[18px] rounded-tr-2xl bg-[#fffaf6] p-3 text-[#1f1a17]" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}>
         {selectedBook ? (
           <div className="max-h-44 overflow-auto">
             <button className="float-right text-sm underline" type="button" onClick={() => setSelected(null)}>Close</button>

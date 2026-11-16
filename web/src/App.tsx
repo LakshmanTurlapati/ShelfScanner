@@ -1,13 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { App as NativeApp } from "@capacitor/app";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Book } from "../../shared/types.ts";
 import { GENRE_LABELS } from "../../shared/types.ts";
-import { askShelf } from "./api";
 import { nearest } from "./pipeline/graph";
 import { genreSections, topRated, withScores } from "./pipeline/score";
 import { enrichOne, scanPhotos } from "./scan";
 import { currentSession, useShelf } from "./store";
 import { CameraScan } from "./CameraScan";
+import { bookTitle, CoverGrid } from "./CoverGrid";
+import { CoverFace } from "./CoverFace";
+import { ShelfChat } from "./ShelfChat";
 import { MapView } from "./MapView";
+import { isNativeApp, ShelfNative } from "./native";
+import { loadProfile, skipProfile, type Profile } from "./profile";
+import { ProfileGate } from "./ProfileGate";
 import { SPLASH_MS, Splash } from "./Splash";
 import { StillCallouts } from "./StillCallouts";
 
@@ -24,22 +30,93 @@ export function App() {
   const books = useMemo(() => withScores(session?.books ?? []), [session?.books]);
   const [drawer, setDrawer] = useState(false);
   const [editing, setEditing] = useState<Book | null>(null);
-  const [question, setQuestion] = useState("");
+  const [detail, setDetail] = useState<Book | null>(null);
   const [rawOrder, setRawOrder] = useState(false);
   const [notice, setNotice] = useState("");
   const [live, setLive] = useState(true);
   const [splash, setSplash] = useState(true);
+  const [profileGate, setProfileGate] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [offline, setOffline] = useState(typeof navigator !== "undefined" && navigator.onLine === false);
   const [stillPhoto, setStillPhoto] = useState<{ url: string; captureId: string } | null>(null);
   const latestUpload = useRef<string | null>(null);
+
+  const backRef = useRef({ splash, detail: false, drawer, profileGate, live });
+  backRef.current = { splash, detail: Boolean(detail), drawer, profileGate, live };
 
   useEffect(() => {
     void shelf.hydrate();
   }, [shelf.hydrate]);
 
   useEffect(() => {
+    const refresh = () => {
+      if (!isNativeApp()) {
+        setOffline(navigator.onLine === false);
+        return;
+      }
+      void ShelfNative.isOnline().then((status) => setOffline(!status.online)).catch(() => setOffline(navigator.onLine === false));
+    };
+    const online = () => refresh();
+    const gone = () => setOffline(true);
+    window.addEventListener("online", online);
+    window.addEventListener("offline", gone);
+    refresh();
+    const subscription = isNativeApp() ? NativeApp.addListener("appStateChange", ({ isActive }) => { if (isActive) refresh(); }) : null;
+    return () => {
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", gone);
+      if (subscription) void subscription.then((handle) => handle.remove());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    const subscription = NativeApp.addListener("backButton", () => {
+      const state = backRef.current;
+      if (state.splash) return;
+      if (state.detail) {
+        setDetail(null);
+        return;
+      }
+      if (state.drawer) {
+        setDrawer(false);
+        return;
+      }
+      if (state.profileGate) {
+        void skipProfile().then(() => {
+          setProfile({ status: "skipped" });
+          setProfileGate(false);
+        });
+        return;
+      }
+      if (!state.live) {
+        setLive(true);
+        return;
+      }
+      void NativeApp.exitApp();
+    });
+    return () => {
+      void subscription.then((handle) => handle.remove());
+    };
+  }, []);
+
+  useEffect(() => {
     const timer = setTimeout(() => setSplash(false), SPLASH_MS);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (splash) return;
+    let cancelled = false;
+    void loadProfile().then((loaded) => {
+      if (cancelled) return;
+      setProfile(loaded);
+      if (!loaded) setProfileGate(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [splash]);
 
   useEffect(() => () => {
     if (stillPhoto) URL.revokeObjectURL(stillPhoto.url);
@@ -67,29 +144,13 @@ export function App() {
     }
   }
 
-  async function ask(event: FormEvent) {
-    event.preventDefault();
-    if (!question.trim() || !books.length) return;
-    shelf.setAsking(true);
-    shelf.setAnswer("");
-    try {
-      await askShelf(question.trim(), books, (chunk) => {
-        shelf.setAnswer(useShelf.getState().answer + chunk);
-      });
-    } catch (err) {
-      shelf.setAnswer(err instanceof Error ? err.message : "Ask failed.");
-    } finally {
-      shelf.setAsking(false);
-    }
-  }
-
   const rated = topRated(rawOrder ? books.map((book) => ({ ...book, score: book.avgRating })) : books);
   const sections = genreSections(books);
   const strong = sections.filter((section) => section.ratedCount >= 2);
   const also = sections.filter((section) => section.ratedCount < 2);
 
   return (
-    <div className="mx-auto min-h-dvh max-w-3xl px-4 pb-24 pt-5">
+    <div className="mx-auto min-h-dvh max-w-3xl px-4 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-[calc(1.25rem+env(safe-area-inset-top,0px))]">
       <header className="mb-4 flex items-end justify-between gap-3">
         <div>
           <p className="mono text-xs uppercase tracking-[0.14em] text-[#6a584d]">Library shelf</p>
@@ -98,12 +159,13 @@ export function App() {
         <div className="flex flex-col items-end gap-1.5">
           {/* Over the camera the toggle floats top right; on the page it sits above Sessions instead of covering it. */}
           <button
-            className={`whitespace-nowrap rounded-full bg-[#1f1a17] px-3 py-1 text-sm text-[#fffaf6] ${live ? "fixed right-4 top-4 z-50" : ""}`}
+            className={`whitespace-nowrap rounded-full bg-[#1f1a17] px-3 py-1 text-sm text-[#fffaf6] ${live ? "fixed right-4 z-50" : ""}`}
+            style={live ? { top: "calc(env(safe-area-inset-top, 0px) + 1rem)" } : undefined}
             type="button"
             aria-pressed={live}
             onClick={() => setLive((on) => !on)}
           >
-            {live ? "Live view on" : "Live view"}
+            {live ? "Open Shelf" : "Back to Live View"}
           </button>
           <button className="whitespace-nowrap rounded-full border border-[#1f1a17] px-3 py-1 text-sm" type="button" onClick={() => setDrawer(true)}>
             Sessions
@@ -117,19 +179,7 @@ export function App() {
 
       {session && (
         <>
-          <form className="mb-3 flex gap-2" onSubmit={ask}>
-            <input
-              aria-label="Ask the shelf"
-              className="row min-w-0 flex-1 px-3 py-2"
-              placeholder="Ask the shelf"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-            />
-            <button className="rounded-xl bg-[#ff6b35] px-3 py-2 font-semibold text-[#1f1a17]" type="submit" disabled={shelf.asking}>
-              {shelf.asking ? "…" : "Ask"}
-            </button>
-          </form>
-          {shelf.answer && <p className="row mb-3 p-3 text-sm leading-6">{shelf.answer}</p>}
+          <ShelfChat books={books} />
           {shelf.progress && <p className="mb-3 text-sm text-[#6a584d]">{shelf.progress}</p>}
           <div className="mb-3">
             <Capture notice={notice} compact onFiles={onFiles} />
@@ -137,13 +187,7 @@ export function App() {
 
           {shelf.tab === "shelf" && stillPhoto?.captureId === session.id && <StillCallouts url={stillPhoto.url} books={books} captureId={session.id} />}
 
-          {shelf.tab === "shelf" && (
-            <ul className="space-y-3">
-              {books.map((book) => (
-                <BookCard key={book.key} book={book} onEdit={() => setEditing(book)} onRetry={() => void enrichOne(book.key, book.detections[0]?.title ?? book.key, book.detections[0]?.author ?? null)} />
-              ))}
-            </ul>
-          )}
+          {shelf.tab === "shelf" && <CoverGrid books={books} profile={profile} onOpen={setDetail} />}
 
           {shelf.tab === "rated" && (
             <section>
@@ -180,7 +224,12 @@ export function App() {
         </>
       )}
 
-      <nav className="fixed inset-x-0 bottom-0 border-t border-[#ede6df] bg-[#fffaf6]/90 px-3 py-2 backdrop-blur-md">
+      {offline && (
+        <p className="pointer-events-none fixed inset-x-4 z-[75] rounded-xl bg-[#1f1a17] px-3 py-2 text-center text-sm text-[#fffaf6]" style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 5rem)" }} role="status">
+          You are offline. Shelf reads need a connection.
+        </p>
+      )}
+      <nav className="fixed inset-x-0 bottom-0 border-t border-[#ede6df] bg-[#fffaf6]/90 px-3 py-2 backdrop-blur-md" style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))" }}>
         <div className="mx-auto grid max-w-3xl grid-cols-4 gap-1" role="tablist">
           {TABS.map(([id, label]) => (
             <button
@@ -220,9 +269,33 @@ export function App() {
         </aside>
       )}
 
-      {live && <CameraScan onClose={() => setLive(false)} />}
+      {live && <CameraScan onClose={() => setLive(false)} paused={profileGate || splash} profile={profile} />}
 
       {splash && <Splash />}
+
+      {profileGate && (
+        <ProfileGate onDone={() => {
+          void loadProfile().then((loaded) => {
+            setProfile(loaded);
+            setProfileGate(false);
+          });
+        }} />
+      )}
+
+      {detail && (
+        <CoverDetail
+          book={books.find((book) => book.key === detail.key) ?? detail}
+          onClose={() => setDetail(null)}
+          onEdit={() => {
+            setEditing(books.find((book) => book.key === detail.key) ?? detail);
+            setDetail(null);
+          }}
+          onRetry={() => {
+            const book = books.find((item) => item.key === detail.key) ?? detail;
+            void enrichOne(book.key, book.detections[0]?.title ?? book.key, book.detections[0]?.author ?? null);
+          }}
+        />
+      )}
 
       {editing && (
         <EditDialog
@@ -267,11 +340,24 @@ function Capture({ onFiles, notice, compact = false }: { onFiles: (files: FileLi
   );
 }
 
+function CoverDetail({ book, onClose, onEdit, onRetry }: { book: Book; onClose: () => void; onEdit: () => void; onRetry: () => void }) {
+  const title = bookTitle(book);
+  return (
+    <div className="fixed inset-0 z-30 grid place-items-end bg-black/30 p-4 sm:place-items-center" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="max-h-[80dvh] w-full max-w-md overflow-auto rounded-[18px] bg-[#f8f4ef] p-4">
+        <button className="float-right text-sm underline" type="button" onClick={onClose}>Close</button>
+        <CoverFace book={book} className="mb-3 h-40 w-28 rounded-lg object-cover" />
+        <BookCard book={book} onEdit={onEdit} onRetry={onRetry} />
+      </div>
+    </div>
+  );
+}
+
 function BookCard({ book, onEdit, onRetry }: { book: Book; onEdit: () => void; onRetry: () => void }) {
   const title = book.canonicalTitle ?? book.detections[0]?.title ?? "Unread spine";
   const spine = book.detections[0]?.spineText;
   return (
-    <li className="card p-4 shadow-[0_8px_24px_rgba(22,15,11,0.06)]">
+    <div className="card p-4 shadow-[0_8px_24px_rgba(22,15,11,0.06)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="display text-xl leading-tight">{book.mark ? `${book.mark} ` : ""}{title}</h2>
@@ -293,7 +379,7 @@ function BookCard({ book, onEdit, onRetry }: { book: Book; onEdit: () => void; o
           <button className="underline" type="button" onClick={onEdit}>Edit</button>
         )}
       </div>
-    </li>
+    </div>
   );
 }
 

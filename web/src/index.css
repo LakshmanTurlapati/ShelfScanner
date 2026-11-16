@@ -12,6 +12,28 @@
     min-height: 100dvh;
   }
 
+  /* Android 15 draws the page under the system bars. These strips keep the light icons readable. */
+  body::before,
+  body::after {
+    content: "";
+    position: fixed;
+    left: 0;
+    right: 0;
+    z-index: 80;
+    background: #141110;
+    pointer-events: none;
+  }
+
+  body::before {
+    top: 0;
+    height: env(safe-area-inset-top, 0px);
+  }
+
+  body::after {
+    bottom: 0;
+    height: env(safe-area-inset-bottom, 0px);
+  }
+
   button, input, textarea {
     font: inherit;
   }
@@ -47,6 +69,29 @@
     border-radius: 12px;
     border: 1px solid rgba(41, 29, 20, 0.1);
     background: #ffffff;
+  }
+
+  .shelf-markdown p + p,
+  .shelf-markdown ul,
+  .shelf-markdown h3 {
+    margin-top: 0.6rem;
+  }
+
+  .shelf-markdown ul {
+    list-style: disc;
+    padding-left: 1.15rem;
+  }
+
+  .shelf-markdown li + li {
+    margin-top: 0.35rem;
+  }
+
+  .shelf-markdown a {
+    text-decoration: underline;
+  }
+
+  .shelf-markdown strong {
+    font-weight: 650;
   }
 }
 

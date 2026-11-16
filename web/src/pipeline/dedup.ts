@@ -72,6 +72,16 @@ export function mergeOverlaps(strips: Detection[][], shown: ReadonlySet<string> 
   return out;
 }
 
+function finitePin(value: unknown): value is { x: number; row: number } {
+  if (!value || typeof value !== "object") return false;
+  const pin = value as { x?: unknown; row?: unknown };
+  return typeof pin.x === "number" && Number.isFinite(pin.x) && typeof pin.row === "number" && Number.isFinite(pin.row);
+}
+
+function legalCover(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isInteger(value) && value > 0);
+}
+
 export function bookKey(title: string, author: string | null) {
   return `${norm(title)}|${norm(author ?? "")}`;
 }
@@ -86,8 +96,15 @@ export function mergeCanonical(books: Book[]): Book[] {
     if (hit) {
       hit.detections.push(...b.detections);
       hit.flags = [...new Set([...hit.flags, ...b.flags])];
+      if (!finitePin(hit.pin) && finitePin(b.pin)) hit.pin = { x: b.pin.x, row: b.pin.row };
+      if (hit.coverId === undefined && b.coverId !== undefined && legalCover(b.coverId)) hit.coverId = b.coverId;
+      if ("coverId" in hit && hit.coverId === undefined) delete hit.coverId;
     }
-    else byId.set(id, { ...b, key: id, detections: [...b.detections] });
+    else {
+      const created = { ...b, key: id, detections: [...b.detections] };
+      if ("coverId" in created && created.coverId === undefined) delete created.coverId;
+      byId.set(id, created);
+    }
   }
   return [...byId.values()];
 }

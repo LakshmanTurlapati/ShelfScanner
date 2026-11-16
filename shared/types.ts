@@ -48,9 +48,17 @@ export type Detection = {
   stripSpan?: [number, number] | null;
 };
 
+export type Pin = { x: number; row: number };
+
 export type Book = {
   key: string;
   detections: Detection[];
+  /** First place a walk saw this book, in shelf coordinates. */
+  pin?: Pin | null;
+  /** Open Library cover id. Absent until lookup; null is a checked miss. */
+  coverId?: number | null;
+  /** Direct https cover when Open Library has no id. Absent until lookup; null is a checked miss. */
+  coverUrl?: string | null;
   status: "queued" | "enriching" | "done" | "unmatched" | "error";
   canonicalTitle: string | null;
   authors: string[];
@@ -76,6 +84,9 @@ export type Session = {
   createdAt: string;
   photoCount: number;
   books: Book[];
+  /** Present only on sessions created by this build. Older blobs stay unstamped. */
+  contract?: 1;
+  mode?: "still" | "walk";
 };
 
 export const GENRE_LABELS: Record<Genre, string> = {

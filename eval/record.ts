@@ -13,7 +13,7 @@ const browser = await chromium.launch();
 try {
   const page = await browser.newPage();
   await page.goto(url);
-  await page.getByRole("button", { name: "Live view on" }).click();
+  await page.getByRole("button", { name: "Open Shelf" }).click();
   await page.getByLabel("Shelf photo").setInputFiles(golden);
   await page.waitForFunction(async () => {
     const modulePath = "/src/store.ts";

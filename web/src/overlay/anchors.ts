@@ -23,11 +23,21 @@ const mainTitles = (title: string) =>
 
 // A lookup can land on another book, even a sequel or companion whose title contains the
 // spine's ("Children of Dune" -> "Dune"), so both main titles must match each other.
+// An empty side does not agree. titleAgrees still treats a missing canonical title as
+// "show the rating", which is a different question from "is this the preferred book".
+export function sameTitle(left: string, right: string) {
+  const a = left.trim();
+  const b = right.trim();
+  if (!a || !b) return false;
+  const fromLeft = mainTitles(a);
+  const fromRight = mainTitles(b);
+  return fromLeft.some((part) => fromRight.some((other) => token_sort_ratio(part, other) >= 85));
+}
+
 export function titleAgrees(book: Book, reading: string) {
   const canonical = book.canonicalTitle?.trim();
   if (!canonical) return true;
-  const spine = mainTitles(reading);
-  return mainTitles(canonical).some((a) => spine.some((b) => token_sort_ratio(a, b) >= 85));
+  return sameTitle(canonical, reading);
 }
 
 export function labelTitle(book: Book, reading: string) {

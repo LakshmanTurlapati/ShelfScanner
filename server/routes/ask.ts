@@ -11,17 +11,29 @@ const bodySchema = z.object({
   books: z.array(z.record(z.string(), z.unknown())).max(200),
 });
 
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export function shelfRecords(books: Record<string, unknown>[]) {
+  return books.map((book) => {
+    const title = text(book.canonicalTitle) || text((book.detections as { title?: unknown }[] | undefined)?.[0]?.title) || "Unread spine";
+    const authors = Array.isArray(book.authors) ? book.authors.filter((author) => typeof author === "string" && author.trim()) : [];
+    const genres = [book.primaryGenre, ...(Array.isArray(book.secondaryGenres) ? book.secondaryGenres : [])].filter((genre) => typeof genre === "string" && genre);
+    return {
+      title,
+      authors,
+      genres,
+      summary: typeof book.summary === "string" ? book.summary : null,
+      rating: typeof book.avgRating === "number" ? book.avgRating : null,
+    };
+  });
+}
+
 export async function ask(c: Context) {
   const parsed = bodySchema.safeParse(await c.req.json());
   if (!parsed.success || !capped(parsed.data.question)) return c.text("invalid question", 400);
-  const compact = parsed.data.books.map((book) => ({
-    key: book.key,
-    title: book.canonicalTitle ?? book.key,
-    authors: book.authors,
-    genres: [book.primaryGenre, ...(Array.isArray(book.secondaryGenres) ? book.secondaryGenres : [])],
-    summary: book.summary,
-    rating: book.avgRating,
-  }));
+  const compact = shelfRecords(parsed.data.books);
   let upstream: ReadableStream<Uint8Array>;
   try {
     upstream = await openrouterStream({

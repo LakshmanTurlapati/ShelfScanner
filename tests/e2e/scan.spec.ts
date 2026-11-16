@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { dismissProfile } from "./dismiss-profile";
 
 const spine = {
   shelf_row: 1,
@@ -44,7 +45,8 @@ test("a recorded scan fills all four tabs", async ({ page }) => {
   );
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Live view on" }).click();
+  await dismissProfile(page);
+  await page.getByRole("button", { name: "Open Shelf" }).click();
   await page.getByLabel("Shelf photo").setInputFiles("tests/e2e/fixture.jpg");
 
   await expect(page.getByRole("heading", { name: "The Hobbit" })).toBeVisible();
