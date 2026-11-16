@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { openCache, purgeExpired } from "./cache.ts";
 import { rateLimit } from "./guards.ts";
 import { ask } from "./routes/ask.ts";
 import { covers } from "./routes/covers.ts";
@@ -27,6 +28,24 @@ function loadEnv() {
 }
 
 loadEnv();
+
+if (!process.env.OPENROUTER_API_KEY) {
+  console.log(JSON.stringify({ route: "startup", warning: "OPENROUTER_API_KEY is not set; reads, lookups and Ask will fail" }));
+}
+
+// Expired rows are never read again; deleting them keeps the cache volume from filling.
+const PURGE_MS = 60 * 60 * 1000;
+const purgeDb = openCache();
+const purge = () => {
+  try {
+    const removed = purgeExpired(purgeDb);
+    console.log(JSON.stringify({ route: "purge", ...removed }));
+  } catch (error) {
+    console.log(JSON.stringify({ route: "purge", failed: error instanceof Error ? error.message : "unknown" }));
+  }
+};
+purge();
+setInterval(purge, PURGE_MS).unref();
 
 const app = new Hono();
 

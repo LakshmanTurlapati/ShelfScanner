@@ -34,6 +34,8 @@ function ratingSource(url: string | null) {
   return "other" as const;
 }
 
+const RATING_SOURCES = new Set<string>(["goodreads", "google_books", "open_library", "other"]);
+
 // With the web search tool on, the model does not follow the response schema,
 // so its answer is mapped onto BookFacts field by field.
 export function normalizeFacts(raw: unknown): BookFactsInput | null {
@@ -63,7 +65,8 @@ export function normalizeFacts(raw: unknown): BookFactsInput | null {
     summary: text(r.summary),
     avg_rating: rating,
     ratings_count: rating === null ? null : count,
-    rating_source: (r.rating_source as BookFactsInput["rating_source"]) ?? ratingSource(url),
+    // A source outside the schema's list would fail the whole lookup; the URL still tells where it came from.
+    rating_source: RATING_SOURCES.has(r.rating_source as string) ? (r.rating_source as BookFactsInput["rating_source"]) : ratingSource(url),
     rating_url: url,
     isbn13: text(r.isbn13),
   };
