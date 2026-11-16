@@ -73,15 +73,6 @@ function wrapped(size, { background = false, round = false, markFill = null } = 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 108 108">${clipped}</svg>`;
 }
 
-function splash(width, height) {
-  const short = Math.min(width, height);
-  const markWidth = short * 0.34;
-  const pixelScale = markWidth / 95.2;
-  const x = (width - 95.2 * pixelScale) / 2 - pixelScale * -6;
-  const y = (height - 74 * pixelScale) / 2 - pixelScale * -2;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="${BACKGROUND}"/><g transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${pixelScale.toFixed(4)})">${markSvg()}</g></svg>`;
-}
-
 function png(svg, file) {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, new Resvg(svg).render().asPng());
@@ -97,46 +88,18 @@ writeFileSync(resolve(root, "web/public/logo.svg"), logo);
 const res = resolve(root, "android/app/src/main/res");
 writeFileSync(resolve(res, "drawable/ic_launcher_foreground.xml"), vectorDrawable(vectorPaths()));
 writeFileSync(resolve(res, "drawable/ic_launcher_monochrome.xml"), vectorDrawable(vectorPaths("#ffffff")));
-writeFileSync(
-  resolve(res, "drawable/ic_launcher_background.xml"),
-  `<?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path android:fillColor="${BACKGROUND}" android:pathData="M0,0h108v108h-108z"/>
-</vector>
-`,
-);
 
 const densities = [
-  ["mipmap-mdpi", 48, 108],
-  ["mipmap-hdpi", 72, 162],
-  ["mipmap-xhdpi", 96, 216],
-  ["mipmap-xxhdpi", 144, 324],
-  ["mipmap-xxxhdpi", 192, 432],
+  ["mipmap-mdpi", 48],
+  ["mipmap-hdpi", 72],
+  ["mipmap-xhdpi", 96],
+  ["mipmap-xxhdpi", 144],
+  ["mipmap-xxxhdpi", 192],
 ];
-for (const [folder, launcher, foreground] of densities) {
+for (const [folder, launcher] of densities) {
   png(wrapped(launcher), resolve(res, folder, "ic_launcher.png"));
   png(wrapped(launcher, { background: true, round: true }), resolve(res, folder, "ic_launcher_round.png"));
-  png(wrapped(foreground), resolve(res, folder, "ic_launcher_foreground.png"));
 }
-
-const splashes = [
-  ["drawable/splash.png", 480, 320],
-  ["drawable-land-mdpi/splash.png", 480, 320],
-  ["drawable-land-hdpi/splash.png", 800, 480],
-  ["drawable-land-xhdpi/splash.png", 1280, 720],
-  ["drawable-land-xxhdpi/splash.png", 1600, 960],
-  ["drawable-land-xxxhdpi/splash.png", 1920, 1280],
-  ["drawable-port-mdpi/splash.png", 320, 480],
-  ["drawable-port-hdpi/splash.png", 480, 800],
-  ["drawable-port-xhdpi/splash.png", 720, 1280],
-  ["drawable-port-xxhdpi/splash.png", 960, 1600],
-  ["drawable-port-xxxhdpi/splash.png", 1280, 1920],
-];
-for (const [file, width, height] of splashes) png(splash(width, height), resolve(res, file));
 
 png(wrapped(192, { background: true }), resolve(root, "web/public/icon-192.png"));
 png(wrapped(512, { background: true }), resolve(root, "web/public/icon-512.png"));

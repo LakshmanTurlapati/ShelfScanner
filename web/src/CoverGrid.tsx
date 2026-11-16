@@ -1,5 +1,5 @@
 import type { Book } from "../../shared/types.ts";
-import { coverImageUrl } from "./covers";
+import { CoverFace } from "./CoverFace";
 import { bookMatchesProfile } from "./match";
 import type { Profile } from "./profile";
 
@@ -31,17 +31,12 @@ export function CoverGrid({ books, onOpen, profile = null }: { books: Book[]; on
     <ul className="grid grid-cols-3 gap-2">
       {walkOrder(books).map((book) => {
         const title = bookTitle(book);
-        const src = coverImageUrl(book.coverId);
         const author = book.authors[0] ?? "Author unknown";
         const forYou = bookMatchesProfile(book, profile);
         return (
           <li key={book.key}>
             <button className={`w-full rounded-lg text-left ${forYou ? "ring-2 ring-[#7c3aed]" : ""}`} type="button" onClick={() => onOpen(book)} aria-label={`Cover of ${title}`}>
-              {src ? (
-                <img className="aspect-[2/3] w-full rounded-lg object-cover" src={src} alt="" />
-              ) : (
-                <span className="flex aspect-[2/3] w-full items-end rounded-lg bg-[#f1ebe4] p-2 text-sm">{title}</span>
-              )}
+              <CoverFace book={book} className="aspect-[2/3] w-full rounded-lg object-cover" />
               {forYou && <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-[#7c3aed]">For you</p>}
               <h2 className="mt-2 text-sm leading-5">{title}</h2>
               <p className="text-xs text-[#6a584d]">{author}</p>

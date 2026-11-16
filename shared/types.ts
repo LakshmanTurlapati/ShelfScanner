@@ -57,6 +57,8 @@ export type Book = {
   pin?: Pin | null;
   /** Open Library cover id. Absent until lookup; null is a checked miss. */
   coverId?: number | null;
+  /** Direct https cover when Open Library has no id. Absent until lookup; null is a checked miss. */
+  coverUrl?: string | null;
   status: "queued" | "enriching" | "done" | "unmatched" | "error";
   canonicalTitle: string | null;
   authors: string[];

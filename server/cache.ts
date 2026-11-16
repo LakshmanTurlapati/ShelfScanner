@@ -40,6 +40,10 @@ export function openCache(file = process.env.CACHE_PATH ?? "./data/cache.db") {
       fetched_at INTEGER NOT NULL
     );
   `);
+  const coverColumns = db.prepare("PRAGMA table_info(covers)").all() as { name: string }[];
+  if (!coverColumns.some((column) => column.name === "cover_url")) {
+    db.exec("ALTER TABLE covers ADD COLUMN cover_url TEXT");
+  }
   return db;
 }
 

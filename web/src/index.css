@@ -70,6 +70,29 @@
     border: 1px solid rgba(41, 29, 20, 0.1);
     background: #ffffff;
   }
+
+  .shelf-markdown p + p,
+  .shelf-markdown ul,
+  .shelf-markdown h3 {
+    margin-top: 0.6rem;
+  }
+
+  .shelf-markdown ul {
+    list-style: disc;
+    padding-left: 1.15rem;
+  }
+
+  .shelf-markdown li + li {
+    margin-top: 0.35rem;
+  }
+
+  .shelf-markdown a {
+    text-decoration: underline;
+  }
+
+  .shelf-markdown strong {
+    font-weight: 650;
+  }
 }
 
 @keyframes ss-rise {

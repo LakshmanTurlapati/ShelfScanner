@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Book } from "../shared/types.ts";
+import { coverLooksEmpty, coverSrc, noteCoverError, noteCoverMiss } from "../web/src/covers.ts";
 import { CoverGrid, walkOrder } from "../web/src/CoverGrid.tsx";
 
 function book(partial: Partial<Book> & Pick<Book, "key">): Book {
@@ -51,6 +52,28 @@ describe("cover grid", () => {
     expect(html).not.toContain("/api/covers/");
     expect(html).toContain("Author unknown");
     expect(html).toContain("Cover of Neuromancer");
+    expect(html).toContain("/logo.svg");
+  });
+
+  it("shows the shelf mark when a cover image fails, and retries once before the next source", () => {
+    const sources = ["https://covers.openlibrary.org/b/id/42-M.jpg", "https://books.google.com/books/content?id=abc"];
+    const retried = noteCoverError(sources, { index: 0, retries: 0, failed: false });
+    expect(coverSrc(sources, retried)).toContain("retry=1");
+    const next = noteCoverError(sources, retried);
+    expect(coverSrc(sources, next)).toBe(sources[1]);
+    const failed = noteCoverError(sources, { ...next, retries: 1 });
+    expect(coverSrc(sources, failed)).toBeNull();
+    expect(coverLooksEmpty({ naturalWidth: 1, naturalHeight: 1 })).toBe(true);
+    expect(coverLooksEmpty({ naturalWidth: 180, naturalHeight: 270 })).toBe(false);
+    const skipped = noteCoverMiss(sources, { index: 0, retries: 0, failed: false });
+    expect(coverSrc(sources, skipped)).toBe(sources[1]);
+    const html = renderToStaticMarkup(createElement(CoverGrid, {
+      books: [book({ key: "Dune", coverId: null, coverUrl: null })],
+      onOpen: () => undefined,
+    }));
+    expect(html).not.toContain("covers.openlibrary.org");
+    expect(html).toContain("/logo.svg");
+    expect(html).toContain("Dune");
   });
 
   it("marks a matching cover without moving it out of walk order", () => {

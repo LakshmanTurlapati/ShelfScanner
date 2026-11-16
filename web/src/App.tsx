@@ -1,15 +1,15 @@
 import { App as NativeApp } from "@capacitor/app";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Book } from "../../shared/types.ts";
 import { GENRE_LABELS } from "../../shared/types.ts";
-import { askShelf } from "./api";
 import { nearest } from "./pipeline/graph";
 import { genreSections, topRated, withScores } from "./pipeline/score";
 import { enrichOne, scanPhotos } from "./scan";
 import { currentSession, useShelf } from "./store";
 import { CameraScan } from "./CameraScan";
 import { bookTitle, CoverGrid } from "./CoverGrid";
-import { coverImageUrl } from "./covers";
+import { CoverFace } from "./CoverFace";
+import { ShelfChat } from "./ShelfChat";
 import { MapView } from "./MapView";
 import { isNativeApp, ShelfNative } from "./native";
 import { loadProfile, skipProfile, type Profile } from "./profile";
@@ -31,7 +31,6 @@ export function App() {
   const [drawer, setDrawer] = useState(false);
   const [editing, setEditing] = useState<Book | null>(null);
   const [detail, setDetail] = useState<Book | null>(null);
-  const [question, setQuestion] = useState("");
   const [rawOrder, setRawOrder] = useState(false);
   const [notice, setNotice] = useState("");
   const [live, setLive] = useState(true);
@@ -145,22 +144,6 @@ export function App() {
     }
   }
 
-  async function ask(event: FormEvent) {
-    event.preventDefault();
-    if (!question.trim() || !books.length) return;
-    shelf.setAsking(true);
-    shelf.setAnswer("");
-    try {
-      await askShelf(question.trim(), books, (chunk) => {
-        shelf.setAnswer(useShelf.getState().answer + chunk);
-      });
-    } catch (err) {
-      shelf.setAnswer(err instanceof Error ? err.message : "Ask failed.");
-    } finally {
-      shelf.setAsking(false);
-    }
-  }
-
   const rated = topRated(rawOrder ? books.map((book) => ({ ...book, score: book.avgRating })) : books);
   const sections = genreSections(books);
   const strong = sections.filter((section) => section.ratedCount >= 2);
@@ -196,19 +179,7 @@ export function App() {
 
       {session && (
         <>
-          <form className="mb-3 flex gap-2" onSubmit={ask}>
-            <input
-              aria-label="Ask the shelf"
-              className="row min-w-0 flex-1 px-3 py-2"
-              placeholder="Ask the shelf"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-            />
-            <button className="rounded-xl bg-[#ff6b35] px-3 py-2 font-semibold text-[#1f1a17]" type="submit" disabled={shelf.asking}>
-              {shelf.asking ? "…" : "Ask"}
-            </button>
-          </form>
-          {shelf.answer && <p className="row mb-3 p-3 text-sm leading-6">{shelf.answer}</p>}
+          <ShelfChat books={books} />
           {shelf.progress && <p className="mb-3 text-sm text-[#6a584d]">{shelf.progress}</p>}
           <div className="mb-3">
             <Capture notice={notice} compact onFiles={onFiles} />
@@ -371,12 +342,11 @@ function Capture({ onFiles, notice, compact = false }: { onFiles: (files: FileLi
 
 function CoverDetail({ book, onClose, onEdit, onRetry }: { book: Book; onClose: () => void; onEdit: () => void; onRetry: () => void }) {
   const title = bookTitle(book);
-  const src = coverImageUrl(book.coverId);
   return (
     <div className="fixed inset-0 z-30 grid place-items-end bg-black/30 p-4 sm:place-items-center" role="dialog" aria-modal="true" aria-label={title}>
       <div className="max-h-[80dvh] w-full max-w-md overflow-auto rounded-[18px] bg-[#f8f4ef] p-4">
         <button className="float-right text-sm underline" type="button" onClick={onClose}>Close</button>
-        {src && <img className="mb-3 h-40 w-28 rounded-lg object-cover" src={src} alt="" />}
+        <CoverFace book={book} className="mb-3 h-40 w-28 rounded-lg object-cover" />
         <BookCard book={book} onEdit={onEdit} onRetry={onRetry} />
       </div>
     </div>

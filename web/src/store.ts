@@ -73,7 +73,7 @@ export function renamedKeys(current: Book[], books: Book[]) {
 
 const CONTRACT = 1;
 
-function withoutKey(book: Book, key: "pin" | "coverId"): Book {
+function withoutKey(book: Book, key: "pin" | "coverId" | "coverUrl"): Book {
   const next = { ...book };
   delete next[key];
   return next;
@@ -96,13 +96,38 @@ function coverChoice(stored: Book, incoming: Book): number | null | undefined {
   return undefined;
 }
 
+function legalCoverUrl(value: unknown): value is string | null {
+  if (value === null) return true;
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol === "http:") url.protocol = "https:";
+    return url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function storedCoverUrl(value: string | null): string | null {
+  if (value === null) return null;
+  const url = new URL(value);
+  if (url.protocol === "http:") url.protocol = "https:";
+  return url.toString();
+}
+
+function coverUrlChoice(stored: Book, incoming: Book): string | null | undefined {
+  if (stored.coverUrl !== undefined) return legalCoverUrl(stored.coverUrl) ? storedCoverUrl(stored.coverUrl) : undefined;
+  if (incoming.coverUrl !== undefined) return legalCoverUrl(incoming.coverUrl) ? storedCoverUrl(incoming.coverUrl) : undefined;
+  return undefined;
+}
+
 function pinChoice(stored: Book, incoming: Book): Book["pin"] | undefined {
   if (finitePin(stored.pin)) return { x: stored.pin.x, row: stored.pin.row };
   if (finitePin(incoming.pin)) return { x: incoming.pin.x, row: incoming.pin.row };
   return undefined;
 }
 
-function applyPlace(book: Book, pin: Book["pin"] | undefined, coverId: number | null | undefined): Book {
+function applyPlace(book: Book, pin: Book["pin"] | undefined, coverId: number | null | undefined, coverUrl: string | null | undefined): Book {
   let next = book;
   if (pin === undefined) {
     if ("pin" in next) next = withoutKey(next, "pin");
@@ -110,6 +135,9 @@ function applyPlace(book: Book, pin: Book["pin"] | undefined, coverId: number | 
   if (coverId === undefined) {
     if ("coverId" in next) next = withoutKey(next, "coverId");
   } else next = { ...next, coverId };
+  if (coverUrl === undefined) {
+    if ("coverUrl" in next) next = withoutKey(next, "coverUrl");
+  } else next = { ...next, coverUrl };
   return next;
 }
 
@@ -122,7 +150,7 @@ function mergeBooks(current: Book[], books: Book[], keepAbsent = false) {
     const old = before.get(book.key);
     if (!old) return book;
     const next = { ...old, key: book.key, detections: book.detections, mark: book.mark, box: book.box };
-    return applyPlace(next, pinChoice(old, book), coverChoice(old, book));
+    return applyPlace(next, pinChoice(old, book), coverChoice(old, book), coverUrlChoice(old, book));
   });
   if (!keepAbsent) return merged;
   const incoming = new Set<string>([...merged.map((book) => book.key), ...renamed.keys()]);
@@ -145,6 +173,11 @@ function withoutDisallowed(session: Session, book: Book): Book {
   }
   if (!stamped || !("coverId" in next) || next.coverId === undefined || !legalCover(next.coverId)) {
     if ("coverId" in next) next = withoutKey(next, "coverId");
+  }
+  if (!stamped || !("coverUrl" in next) || next.coverUrl === undefined || !legalCoverUrl(next.coverUrl)) {
+    if ("coverUrl" in next) next = withoutKey(next, "coverUrl");
+  } else if (next.coverUrl) {
+    next = { ...next, coverUrl: storedCoverUrl(next.coverUrl) };
   }
   return next;
 }
