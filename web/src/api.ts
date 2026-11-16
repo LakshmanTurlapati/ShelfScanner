@@ -1,5 +1,5 @@
 import type { BookFactsInput } from "../../shared/schemas.ts";
-import type { Flag } from "../../shared/types.ts";
+import type { Book, Flag } from "../../shared/types.ts";
 import { isNativeApp, ShelfNative } from "./native.ts";
 
 export type SpineResponse = {
@@ -72,12 +72,39 @@ async function ensureOnline() {
   assertOnline();
 }
 
-async function send(input: string, init: RequestInit, retry = true) {
+export class TimeoutError extends Error {
+  constructor() {
+    super("The server took too long to answer. Try again.");
+    this.name = "TimeoutError";
+  }
+}
+
+// The packaged app's fetch is CapacitorHttp, which ignores AbortSignal, so the timer is what
+// frees the UI there. In a browser the signal also cancels the request itself.
+export async function fetchWithin(target: string, init: RequestInit, ms: number) {
+  const signal = typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(ms) : undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new TimeoutError()), ms);
+  });
+  try {
+    return await Promise.race([fetch(target, { ...init, signal: init.signal ?? signal }), expired]);
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") throw new TimeoutError();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const DEFAULT_TIMEOUT_MS = 60_000;
+
+async function send(input: string, init: RequestInit, retry = true, timeoutMs = DEFAULT_TIMEOUT_MS) {
   await ensureOnline();
   const target = apiUrl(input);
-  const res = await fetch(target, init);
+  const res = await fetchWithin(target, init, timeoutMs);
   if (retry && (res.status === 502 || res.status === 504)) {
-    const retry = await fetch(target, init);
+    const retry = await fetchWithin(target, init, timeoutMs);
     if (!retry.ok) throw new Error(`${retry.status}`);
     return retry;
   }
@@ -99,7 +126,7 @@ export async function enrichBook(input: { title: string; author: string | null; 
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
-  }, false);
+  }, false, 90_000);
   return (await res.json()) as EnrichResponse;
 }
 
@@ -108,7 +135,7 @@ export async function quickFacts(items: Array<{ key: string; title: string; auth
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ items }),
-  }, false);
+  }, false, 20_000);
   return (await res.json()) as { items: QuickFactsItem[] };
 }
 
@@ -117,7 +144,7 @@ export async function embedBooks(items: Array<{ key: string; text: string }>) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ items }),
-  });
+  }, true, 30_000);
   return (await res.json()) as { items: Array<{ key: string; embedding: number[] }> };
 }
 
@@ -139,44 +166,73 @@ async function readTextStream(res: Response, onText: (chunk: string) => void) {
   }
 }
 
+export class CancelledError extends Error {
+  constructor() {
+    super("cancelled");
+    this.name = "AbortError";
+  }
+}
+
 // The packaged app does not use CapacitorHttp for this call. That client waits
 // for the whole body, so the answer would appear in one piece.
-async function streamNatively(url: string, body: string, onText: (chunk: string) => void) {
+async function streamNatively(url: string, body: string, onText: (chunk: string) => void, signal?: AbortSignal) {
   let attempt = 0;
   while (attempt < 2) {
     attempt += 1;
+    if (signal?.aborted) throw new CancelledError();
     const requestId = crypto.randomUUID();
     let sent = false;
     const handle = await ShelfNative.addListener("chunk", (event) => {
-      if (event.requestId !== requestId || !event.text) return;
+      if (event.requestId !== requestId || !event.text || signal?.aborted) return;
       sent = true;
       onText(event.text);
     });
+    const abort = () => void ShelfNative.cancel({ requestId }).catch(() => undefined);
+    signal?.addEventListener("abort", abort, { once: true });
     try {
       await ShelfNative.stream({ url, body, requestId });
       return;
     } catch (error) {
+      if (signal?.aborted) throw new CancelledError();
       const message = error instanceof Error ? error.message : "Ask failed.";
       if (!sent && attempt === 1 && (message.includes("502") || message.includes("504"))) continue;
       throw new Error(message);
     } finally {
+      signal?.removeEventListener("abort", abort);
       await handle.remove();
     }
   }
 }
 
-export async function askShelf(question: string, books: unknown[], onText: (chunk: string) => void) {
+// The server's shelfRecords reads only these fields. Sending whole books carried each
+// 1,536-number embedding and passed the 256 KB body limit at about a dozen books.
+export const ASK_BOOK_LIMIT = 200;
+
+export function askBooks(books: readonly Book[]) {
+  return books.slice(0, ASK_BOOK_LIMIT).map((book) => ({
+    canonicalTitle: book.canonicalTitle ?? null,
+    detections: book.detections[0]?.title ? [{ title: book.detections[0].title }] : [],
+    authors: book.authors,
+    primaryGenre: book.primaryGenre ?? null,
+    secondaryGenres: book.secondaryGenres ?? [],
+    summary: book.summary ?? null,
+    avgRating: book.avgRating ?? null,
+  }));
+}
+
+export async function askShelf(question: string, books: readonly Book[], onText: (chunk: string) => void, signal?: AbortSignal) {
   await ensureOnline();
-  const body = JSON.stringify({ question, books });
+  const body = JSON.stringify({ question, books: askBooks(books) });
   const url = apiUrl("/api/ask");
   if (isNativeApp()) {
-    await streamNatively(url, body, onText);
+    await streamNatively(url, body, onText, signal);
     return;
   }
   const res = await send("/api/ask", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body,
+    signal,
   });
   await readTextStream(res, onText);
 }

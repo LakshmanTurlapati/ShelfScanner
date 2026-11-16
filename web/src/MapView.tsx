@@ -1,18 +1,25 @@
 import { useEffect, useState, type ComponentType } from "react";
 import type { Book } from "../../shared/types.ts";
 import { GENRE_LABELS } from "../../shared/types.ts";
+import { escapeHtml } from "./markdown";
 import { knnGraph, nearest } from "./pipeline/graph";
 
 type ForceGraphComponent = ComponentType<{
   graphData: ReturnType<typeof knnGraph>;
   nodeAutoColorBy: string;
-  nodeLabel: string;
+  nodeLabel: (node: { title: string }) => string;
   nodeVal: (node: { score: number | null }) => number;
   linkWidth: (link: { value: number }) => number;
   onNodeClick: (node: { id: string }) => void;
   width: number;
   height: number;
 }>;
+
+// force-graph writes a string label into its tooltip as HTML, and titles come from the model's
+// reading of a spine, so the label is escaped text.
+export function mapLabel(node: { title: string }) {
+  return escapeHtml(node.title);
+}
 
 export function MapView({ books }: { books: Book[] }) {
   const graph = knnGraph(books);
@@ -39,7 +46,7 @@ export function MapView({ books }: { books: Book[] }) {
           <Graph
             graphData={graph}
             nodeAutoColorBy="genre"
-            nodeLabel="title"
+            nodeLabel={mapLabel}
             nodeVal={(node) => (node.score == null ? 1 : 2 + node.score)}
             linkWidth={(link) => 0.4 + link.value}
             onNodeClick={(node) => setSelected(node.id)}

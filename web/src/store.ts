@@ -73,6 +73,21 @@ export function renamedKeys(current: Book[], books: Book[]) {
 
 const CONTRACT = 1;
 
+// Each enriched book carries a 1,536-number embedding, and the whole history is rewritten during a
+// scan, so the phone keeps the newest shelves only. The open shelf is never dropped.
+export const MAX_SESSIONS = 20;
+
+export function capSessions(sessions: Session[], keep: string | null) {
+  if (sessions.length <= MAX_SESSIONS) return sessions;
+  const newest = [...sessions].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const kept = new Set(newest.slice(0, MAX_SESSIONS).map((session) => session.id));
+  if (keep && !kept.has(keep) && sessions.some((session) => session.id === keep)) {
+    kept.delete(newest[MAX_SESSIONS - 1].id);
+    kept.add(keep);
+  }
+  return sessions.filter((session) => kept.has(session.id));
+}
+
 function withoutKey(book: Book, key: "pin" | "coverId" | "coverUrl"): Book {
   const next = { ...book };
   delete next[key];
@@ -191,19 +206,27 @@ export const useShelf = create<State>((setState, getState) => ({
   answer: "",
   asking: false,
   hydrate: async () => {
-    const saved = (await get(STORE_KEY)) as { sessions: Session[]; currentId: string | null } | undefined;
-    if (getState().currentId) {
-      setState({ ready: true });
-      return;
+    let saved: { sessions: Session[]; currentId: string | null } | undefined;
+    try {
+      saved = (await get(STORE_KEY)) as typeof saved;
+    } catch {
+      saved = undefined;
     }
-    setState({ ready: true, sessions: saved?.sessions ?? [], currentId: saved?.currentId ?? null });
+    // A read can start before the saved shelves load (the splash lets taps through). Merging keeps
+    // both, where replacing would drop the history and the next write would make that permanent.
+    const { sessions: live, currentId } = getState();
+    const known = new Set(live.map((session) => session.id));
+    const sessions = capSessions([...live, ...(saved?.sessions ?? []).filter((session) => !known.has(session.id))], currentId);
+    const selected = currentId ?? saved?.currentId ?? null;
+    setState({ ready: true, sessions, currentId: selected });
+    if (live.length) persist(sessions, selected);
   },
   setTab: (tab) => setState({ tab }),
   setAnswer: (answer) => setState({ answer }),
   setAsking: (asking) => setState({ asking }),
   beginSession: (photoCount, id = crypto.randomUUID(), mode: "still" | "walk" = "still") => {
     const session: Session = { id, createdAt: new Date().toISOString(), photoCount, books: [], contract: CONTRACT, mode };
-    const sessions = [session, ...getState().sessions];
+    const sessions = capSessions([session, ...getState().sessions], id);
     setState({ sessions, currentId: id, tab: "shelf", answer: "", progress: "" });
     persist(sessions, id);
     return id;
@@ -258,7 +281,7 @@ export const useShelf = create<State>((setState, getState) => ({
     persist(next, selected);
   },
   openSession: (id) => {
-    setState({ currentId: id, tab: "shelf", progress: "" });
+    setState({ currentId: id, tab: "shelf", progress: "", answer: "" });
     persist(getState().sessions, id);
   },
   clearLocal: () => {

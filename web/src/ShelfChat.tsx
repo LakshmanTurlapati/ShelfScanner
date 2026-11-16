@@ -18,6 +18,17 @@ export function ShelfChat({ books }: { books: Book[] }) {
   const [error, setError] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  const current = useRef<AbortController | null>(null);
+
+  // App keys this view by session, so leaving a shelf cancels its answer and a late chunk
+  // cannot land under the next one.
+  useEffect(() => () => {
+    if (!current.current) return;
+    current.current.abort();
+    current.current = null;
+    useShelf.getState().setAsking(false);
+    useShelf.getState().setAnswer("");
+  }, []);
 
   useEffect(() => {
     const node = scroller.current;
@@ -35,14 +46,22 @@ export function ShelfChat({ books }: { books: Book[] }) {
     setAsking(true);
     setAnswer("");
     stick.current = true;
+    current.current?.abort();
+    const controller = new AbortController();
+    current.current = controller;
     try {
       await askShelf(question, books, (chunk) => {
+        if (current.current !== controller) return;
         setAnswer(useShelf.getState().answer + chunk);
-      });
+      }, controller.signal);
     } catch (err) {
+      if (controller.signal.aborted) return;
       setError(err instanceof OfflineError ? err.message : "The shelf could not answer. Try again.");
     } finally {
-      setAsking(false);
+      if (current.current === controller) {
+        current.current = null;
+        setAsking(false);
+      }
     }
   }
 
@@ -70,11 +89,8 @@ export function ShelfChat({ books }: { books: Book[] }) {
         >
           {asked && <p className="ml-10 break-words rounded-2xl bg-[#1f1a17] px-3 py-2 text-sm leading-6 text-[#fffaf6]">{asked}</p>}
           <div className="mr-10 rounded-2xl border border-[#eadfd4] bg-white px-3 py-2 text-sm leading-6 text-[#1f1a17] [overflow-wrap:anywhere]">
-            {error ? (
-              <p className="text-[#8a3b2c]">{error}</p>
-            ) : (
-              answer && <div className="shelf-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(answer, asking) }} />
-            )}
+            {answer && <div className="shelf-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(answer, asking) }} />}
+            {error && <p className={`text-[#8a3b2c] ${answer ? "mt-1" : ""}`}>{answer ? `The answer stopped early. ${error}` : error}</p>}
             {asking && (
               <p className="mt-1 flex gap-1" aria-label="Writing an answer">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#a58e5f]" />

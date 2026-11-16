@@ -1,7 +1,8 @@
 import { App as NativeApp } from "@capacitor/app";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { bookMatchesProfile } from "./match";
-import { CAMERA_INSECURE, cameraNotice, isNativeApp, openCameraSettings } from "./native";
+import { onBack } from "./back-stack";
+import { CAMERA_INSECURE, cameraNotice, isNativeApp, openCameraSettings, ShelfNative } from "./native";
 import { anchorsForCapture } from "./overlay/anchors";
 import type { Profile } from "./profile";
 import { saveFrame } from "./api";
@@ -211,17 +212,23 @@ export function CameraScan({ onClose, paused = false, profile = null }: { onClos
   }, []);
 
   const restartCamera = useRef<() => void>(() => undefined);
+  const stopCamera = useRef<() => void>(() => undefined);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  const cameraNoticeShown = useRef(false);
   useEffect(() => {
     const video = videoRef.current;
     let stream: MediaStream | null = null;
     let cancelled = false;
     let starting = false;
+    let backgrounded = false;
     const stop = () => {
       stream?.getTracks().forEach((track) => track.stop());
       stream = null;
+      if (video) video.srcObject = null;
     };
     const start = () => {
-      if (cancelled || !video || starting) return;
+      if (cancelled || !video || starting || pausedRef.current) return;
       if (stream?.getVideoTracks().some((track) => track.readyState === "live")) return;
       starting = true;
       stop();
@@ -236,48 +243,86 @@ export function CameraScan({ onClose, paused = false, profile = null }: { onClos
       })
         .then((next) => {
           starting = false;
-          if (cancelled) {
+          if (cancelled || backgrounded || pausedRef.current) {
             next.getTracks().forEach((track) => track.stop());
             return;
           }
           stream = next;
           next.getVideoTracks().forEach((track) => {
             track.onended = () => {
-              if (!cancelled && document.visibilityState === "visible") start();
+              if (!cancelled && !backgrounded && document.visibilityState === "visible") start();
             };
           });
           video.srcObject = next;
+          if (cameraNoticeShown.current) {
+            cameraNoticeShown.current = false;
+            setNotice("");
+          }
           void video.play().catch(() => setNotice("Tap Read shelf after allowing the camera."));
         })
         .catch(() => {
           starting = false;
           void cameraNotice().then((message) => {
-            if (!cancelled) setNotice(message);
+            if (cancelled) return;
+            cameraNoticeShown.current = true;
+            setNotice(message);
           });
         });
     };
+    // Coming back is not a request for the camera. Closing the permission dialog also resumes the
+    // activity, and asking again straight after a deny turns it into a permanent block on Android 11+.
+    const resume = () => {
+      backgrounded = false;
+      if (!isNativeApp()) {
+        start();
+        return;
+      }
+      void ShelfNative.cameraAccess()
+        .then((access) => {
+          if (access.state === "granted") start();
+        })
+        .catch(() => undefined);
+    };
+    const background = () => {
+      backgrounded = true;
+      stop();
+    };
     restartCamera.current = start;
+    stopCamera.current = stop;
     start();
     const onVisible = () => {
-      if (document.visibilityState === "visible") start();
+      if (document.visibilityState === "visible") resume();
+      else background();
     };
     document.addEventListener("visibilitychange", onVisible);
+    const subscription = isNativeApp()
+      ? NativeApp.addListener("appStateChange", ({ isActive }) => {
+          if (isActive) resume();
+          else background();
+        })
+      : null;
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", onVisible);
+      if (subscription) void subscription.then((handle) => handle.remove());
       stop();
     };
   }, []);
 
+  // The camera waits for the splash and the profile quiz, so the permission prompt comes with the
+  // live view behind it rather than over an unrelated screen.
   useEffect(() => {
-    if (!isNativeApp()) return;
-    const subscription = NativeApp.addListener("appStateChange", ({ isActive }) => {
-      if (isActive) restartCamera.current();
+    if (paused) stopCamera.current();
+    else restartCamera.current();
+  }, [paused]);
+
+  useEffect(() => {
+    if (!selectedBook && !showReview) return;
+    return onBack(() => {
+      setSelected(null);
+      setShowReview(false);
     });
-    return () => {
-      void subscription.then((handle) => handle.remove());
-    };
-  }, []);
+  }, [selectedBook, showReview]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -495,6 +540,7 @@ export function CameraScan({ onClose, paused = false, profile = null }: { onClos
       {notice.includes("camera") || notice.includes("Camera") ? (
         <div className="absolute left-4 flex gap-2" style={{ top: "calc(env(safe-area-inset-top, 0px) + 7rem)" }}>
           <button className="rounded-full bg-[#fffaf6] px-3 py-1 text-[#1f1a17]" type="button" onClick={onClose}>Use a shelf photo</button>
+          <button className="rounded-full border border-[#fffaf6] bg-black/50 px-3 py-1 text-[#fffaf6]" type="button" onClick={() => restartCamera.current()}>Try again</button>
           {notice.includes("Camera access is off") && isNativeApp() ? (
             <button className="rounded-full bg-[#fffaf6] px-3 py-1 text-[#1f1a17]" type="button" onClick={() => void openCameraSettings()}>Open settings</button>
           ) : null}

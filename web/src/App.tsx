@@ -11,11 +11,19 @@ import { bookTitle, CoverGrid } from "./CoverGrid";
 import { CoverFace } from "./CoverFace";
 import { ShelfChat } from "./ShelfChat";
 import { MapView } from "./MapView";
+import { apiUrl } from "./api";
+import { popBack } from "./back-stack";
 import { isNativeApp, ShelfNative } from "./native";
-import { loadProfile, skipProfile, type Profile } from "./profile";
+import { loadProfile, type Profile } from "./profile";
 import { ProfileGate } from "./ProfileGate";
 import { SPLASH_MS, Splash } from "./Splash";
 import { StillCallouts } from "./StillCallouts";
+
+// Edge-to-edge WebViews draw under the system bars, so dialogs keep clear of both.
+const DIALOG_INSETS = {
+  paddingTop: "calc(1rem + env(safe-area-inset-top, 0px))",
+  paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))",
+} as const;
 
 const TABS = [
   ["shelf", "Shelf"],
@@ -41,8 +49,8 @@ export function App() {
   const [stillPhoto, setStillPhoto] = useState<{ url: string; captureId: string } | null>(null);
   const latestUpload = useRef<string | null>(null);
 
-  const backRef = useRef({ splash, detail: false, drawer, profileGate, live });
-  backRef.current = { splash, detail: Boolean(detail), drawer, profileGate, live };
+  const backRef = useRef({ splash, detail: false, editing: false, drawer, profileGate, live });
+  backRef.current = { splash, detail: Boolean(detail), editing: Boolean(editing), drawer, profileGate, live };
 
   useEffect(() => {
     void shelf.hydrate();
@@ -74,6 +82,10 @@ export function App() {
     const subscription = NativeApp.addListener("backButton", () => {
       const state = backRef.current;
       if (state.splash) return;
+      if (state.editing) {
+        setEditing(null);
+        return;
+      }
       if (state.detail) {
         setDetail(null);
         return;
@@ -82,18 +94,18 @@ export function App() {
         setDrawer(false);
         return;
       }
+      // Back hides the quiz for this launch only. Skip inside the quiz is the lasting choice.
       if (state.profileGate) {
-        void skipProfile().then(() => {
-          setProfile({ status: "skipped" });
-          setProfileGate(false);
-        });
+        setProfileGate(false);
         return;
       }
+      if (popBack()) return;
       if (!state.live) {
         setLive(true);
         return;
       }
-      void NativeApp.exitApp();
+      // Minimizing keeps the walk session; exiting would end it.
+      void NativeApp.minimizeApp();
     });
     return () => {
       void subscription.then((handle) => handle.remove());
@@ -179,7 +191,7 @@ export function App() {
 
       {session && (
         <>
-          <ShelfChat books={books} />
+          <ShelfChat key={session.id} books={books} />
           {shelf.progress && <p className="mb-3 text-sm text-[#6a584d]">{shelf.progress}</p>}
           <div className="mb-3">
             <Capture notice={notice} compact onFiles={onFiles} />
@@ -248,7 +260,11 @@ export function App() {
 
       {drawer && (
         <aside className="fixed inset-0 z-20 bg-black/30" onClick={() => setDrawer(false)}>
-          <div className="ml-auto h-full w-80 bg-[#f8f4ef] p-4" onClick={(event) => event.stopPropagation()}>
+          <div
+            className="ml-auto flex h-full w-80 flex-col overflow-auto bg-[#f8f4ef] p-4"
+            style={{ paddingTop: "calc(1rem + env(safe-area-inset-top, 0px))", paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="mb-3 flex items-center justify-between">
               <h2 className="display text-2xl">Sessions</h2>
               <button type="button" onClick={() => setDrawer(false)}>Close</button>
@@ -262,9 +278,21 @@ export function App() {
                 </li>
               ))}
             </ul>
-            <button className="mt-4 text-sm underline" type="button" onClick={() => { shelf.clearLocal(); setStillPhoto(null); setDrawer(false); }}>
+            <button
+              className="mt-4 self-start text-sm underline"
+              type="button"
+              onClick={() => {
+                if (!window.confirm("Clear every saved shelf on this phone? This cannot be undone.")) return;
+                shelf.clearLocal();
+                setStillPhoto(null);
+                setDrawer(false);
+              }}
+            >
               Clear
             </button>
+            <a className="mt-auto pt-6 text-sm text-[#6a584d] underline" href={apiUrl("/privacy.html")}>
+              Privacy policy
+            </a>
           </div>
         </aside>
       )}
@@ -302,8 +330,8 @@ export function App() {
           book={editing}
           onClose={() => setEditing(null)}
           onSave={async (title, author) => {
-            await enrichOne(editing.key, title, author);
             setEditing(null);
+            await enrichOne(editing.key, title, author);
           }}
         />
       )}
@@ -330,7 +358,9 @@ function Capture({ onFiles, notice, compact = false }: { onFiles: (files: FileLi
           className="mt-1 block w-full"
           type="file"
           accept="image/*"
-          capture="environment"
+          // A capture input asks for the camera on Android and opens nothing when it is denied,
+          // which is exactly when this fallback is needed. The system picker needs no permission.
+          capture={isNativeApp() ? undefined : "environment"}
           multiple
           onChange={(event) => event.target.files && onFiles(event.target.files)}
         />
@@ -343,7 +373,7 @@ function Capture({ onFiles, notice, compact = false }: { onFiles: (files: FileLi
 function CoverDetail({ book, onClose, onEdit, onRetry }: { book: Book; onClose: () => void; onEdit: () => void; onRetry: () => void }) {
   const title = bookTitle(book);
   return (
-    <div className="fixed inset-0 z-30 grid place-items-end bg-black/30 p-4 sm:place-items-center" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="fixed inset-0 z-30 grid place-items-end bg-black/30 p-4 sm:place-items-center" style={DIALOG_INSETS} role="dialog" aria-modal="true" aria-label={title}>
       <div className="max-h-[80dvh] w-full max-w-md overflow-auto rounded-[18px] bg-[#f8f4ef] p-4">
         <button className="float-right text-sm underline" type="button" onClick={onClose}>Close</button>
         <CoverFace book={book} className="mb-3 h-40 w-28 rounded-lg object-cover" />
@@ -418,7 +448,7 @@ function EditDialog({ book, onClose, onSave }: { book: Book; onClose: () => void
   const [title, setTitle] = useState(book.canonicalTitle ?? book.detections[0]?.title ?? "");
   const [author, setAuthor] = useState(book.authors[0] ?? book.detections[0]?.author ?? "");
   return (
-    <div className="fixed inset-0 z-30 grid place-items-end bg-black/30 p-4 sm:place-items-center" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-30 grid place-items-end bg-black/30 p-4 sm:place-items-center" style={DIALOG_INSETS} role="dialog" aria-modal="true">
       <form
         className="w-full max-w-md rounded-[18px] bg-[#f8f4ef] p-4"
         onSubmit={(event) => {
