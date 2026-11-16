@@ -11,8 +11,9 @@ import { bookTitle, CoverGrid } from "./CoverGrid";
 import { CoverFace } from "./CoverFace";
 import { ShelfChat } from "./ShelfChat";
 import { MapView } from "./MapView";
-import { apiUrl } from "./api";
 import { popBack } from "./back-stack";
+import { DataNotice } from "./DataNotice";
+import { acceptNotice, noticeAccepted, PRIVACY_URL } from "./legal";
 import { isNativeApp, ShelfNative } from "./native";
 import { loadProfile, type Profile } from "./profile";
 import { ProfileGate } from "./ProfileGate";
@@ -43,14 +44,17 @@ export function App() {
   const [notice, setNotice] = useState("");
   const [live, setLive] = useState(true);
   const [splash, setSplash] = useState(true);
+  const [dataNotice, setDataNotice] = useState(false);
+  // The camera waits until the saved profile is known, so the quiz is never opened under its prompt.
+  const [profileReady, setProfileReady] = useState(false);
   const [profileGate, setProfileGate] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [offline, setOffline] = useState(typeof navigator !== "undefined" && navigator.onLine === false);
   const [stillPhoto, setStillPhoto] = useState<{ url: string; captureId: string } | null>(null);
   const latestUpload = useRef<string | null>(null);
 
-  const backRef = useRef({ splash, detail: false, editing: false, drawer, profileGate, live });
-  backRef.current = { splash, detail: Boolean(detail), editing: Boolean(editing), drawer, profileGate, live };
+  const backRef = useRef({ splash, dataNotice, detail: false, editing: false, drawer, profileGate, live });
+  backRef.current = { splash, dataNotice, detail: Boolean(detail), editing: Boolean(editing), drawer, profileGate, live };
 
   useEffect(() => {
     void shelf.hydrate();
@@ -82,6 +86,11 @@ export function App() {
     const subscription = NativeApp.addListener("backButton", () => {
       const state = backRef.current;
       if (state.splash) return;
+      // Leaving is not agreeing; the notice is there again on return.
+      if (state.dataNotice) {
+        void NativeApp.minimizeApp();
+        return;
+      }
       if (state.editing) {
         setEditing(null);
         return;
@@ -118,17 +127,22 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (splash) return;
+    if (!splash && !noticeAccepted()) setDataNotice(true);
+  }, [splash]);
+
+  useEffect(() => {
+    if (splash || dataNotice || !noticeAccepted()) return;
     let cancelled = false;
-    void loadProfile().then((loaded) => {
+    void loadProfile().catch(() => null).then((loaded) => {
       if (cancelled) return;
       setProfile(loaded);
       if (!loaded) setProfileGate(true);
+      setProfileReady(true);
     });
     return () => {
       cancelled = true;
     };
-  }, [splash]);
+  }, [splash, dataNotice]);
 
   useEffect(() => () => {
     if (stillPhoto) URL.revokeObjectURL(stillPhoto.url);
@@ -290,16 +304,23 @@ export function App() {
             >
               Clear
             </button>
-            <a className="mt-auto pt-6 text-sm text-[#6a584d] underline" href={apiUrl("/privacy.html")}>
+            <a className="mt-auto pt-6 text-sm text-[#6a584d] underline" href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">
               Privacy policy
             </a>
           </div>
         </aside>
       )}
 
-      {live && <CameraScan onClose={() => setLive(false)} paused={profileGate || splash} profile={profile} />}
+      {live && <CameraScan onClose={() => setLive(false)} paused={splash || dataNotice || !noticeAccepted() || !profileReady || profileGate} profile={profile} />}
 
       {splash && <Splash />}
+
+      {dataNotice && (
+        <DataNotice onAgree={() => {
+          acceptNotice();
+          setDataNotice(false);
+        }} />
+      )}
 
       {profileGate && (
         <ProfileGate onDone={() => {
@@ -422,7 +443,7 @@ function RatedGroup({ title, books }: { title: string; books: Book[] }) {
         {books.map((book, index) => (
           <li key={book.key} className="row flex items-baseline justify-between gap-3 px-3 py-2">
             <span><span className="mr-2 text-[#6a584d]">{index + 1}</span>{book.canonicalTitle ?? book.key}</span>
-            <span className="whitespace-nowrap text-sm text-[#6a584d]">{book.avgRating?.toFixed(2) ?? "—"} · {book.ratingsCount ?? 0}</span>
+            <span className="whitespace-nowrap text-sm text-[#6a584d]">{book.avgRating?.toFixed(2) ?? "—"} · {(book.ratingsCount ?? 0).toLocaleString()} ratings</span>
           </li>
         ))}
       </ol>

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Book, Session } from "../shared/types.ts";
-import { fetchWithin, TimeoutError } from "../web/src/api.ts";
+import { fetchWithin, reportAnswer, TimeoutError } from "../web/src/api.ts";
 import { onBack, popBack } from "../web/src/back-stack.ts";
+import { acceptNotice, DATA_NOTICE_KEY, DATA_NOTICE_VERSION, noticeAccepted } from "../web/src/legal.ts";
 import { mapLabel } from "../web/src/MapView.tsx";
 import { enrichOne } from "../web/src/scan.ts";
 import { capSessions, MAX_SESSIONS, useShelf } from "../web/src/store.ts";
@@ -71,6 +72,16 @@ describe("release fixes", () => {
     expect(state.currentId).toBe(id);
   });
 
+  it("keeps the saved open shelf when older history is over the cap", async () => {
+    const many = Array.from({ length: MAX_SESSIONS + 5 }, (_, i) => session(`s${i}`, new Date(Date.UTC(2026, 0, 1 + i)).toISOString()));
+    saved.value = { sessions: many, currentId: "s0" };
+    await useShelf.getState().hydrate();
+    const state = useShelf.getState();
+    expect(state.sessions).toHaveLength(MAX_SESSIONS);
+    expect(state.currentId).toBe("s0");
+    expect(state.sessions.some((item) => item.id === "s0")).toBe(true);
+  });
+
   it("keeps the newest shelves and never drops the open one", () => {
     const many = Array.from({ length: MAX_SESSIONS + 5 }, (_, i) => session(`s${i}`, new Date(Date.UTC(2026, 0, 1 + i)).toISOString()));
     const kept = capSessions(many, "s0");
@@ -103,5 +114,28 @@ describe("release fixes", () => {
     first();
     expect(popBack()).toBe(false);
     expect(closed).toEqual(["second"]);
+  });
+
+  it("sends a report with the question, the answer and the reason", async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetch);
+    await reportAnswer({ reason: "offensive", question: "Which?", answer: "x".repeat(9000) });
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/report");
+    const body = JSON.parse(String(init.body)) as { reason: string; question: string; answer: string };
+    expect(body.reason).toBe("offensive");
+    expect(body.question).toBe("Which?");
+    expect(body.answer).toHaveLength(8000);
+  });
+
+  it("remembers the camera notice by version", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) });
+    expect(noticeAccepted()).toBe(false);
+    acceptNotice();
+    expect(values.get(DATA_NOTICE_KEY)).toBe(DATA_NOTICE_VERSION);
+    expect(noticeAccepted()).toBe(true);
+    values.set(DATA_NOTICE_KEY, "0");
+    expect(noticeAccepted()).toBe(false);
   });
 });

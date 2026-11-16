@@ -24,7 +24,9 @@
     "eval:record": "tsx eval/record.ts",
     "eval:record-boxes": "tsx eval/record-boxes.ts",
     "eval:track": "tsx eval/track-bench.ts",
-    "frames:pull": "tsx scripts/pull-frames.ts"
+    "frames:pull": "tsx scripts/pull-frames.ts",
+    "reports:pull": "tsx scripts/pull-reports.ts",
+    "store:assets": "node scripts/store-assets.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",

@@ -13,6 +13,7 @@ import { enrich } from "./routes/enrich.ts";
 import { saveFrame } from "./routes/frames.ts";
 import { quickFacts } from "./routes/quick-facts.ts";
 import { readStrip } from "./routes/read-strip.ts";
+import { report } from "./routes/report.ts";
 
 function loadEnv() {
   const file = path.resolve(".env");
@@ -72,6 +73,7 @@ app.post("/api/covers", lookupLimit, bodyLimit({ maxSize: 8 * 1024 }), covers);
 app.post("/api/quick-facts", rateLimit({ perMinute: 300, perDay: 5_000 }), bodyLimit({ maxSize: 16 * 1024 }), quickFacts);
 app.post("/api/embed", rateLimit({ perMinute: 60, perDay: 2_000 }), bodyLimit({ maxSize: 256 * 1024 }), embed);
 app.post("/api/ask", apiLimit, bodyLimit({ maxSize: 256 * 1024 }), ask);
+app.post("/api/report", rateLimit({ perMinute: 10, perDay: 100 }), bodyLimit({ maxSize: 16 * 1024 }), report);
 app.post("/api/frames", rateLimit({ perMinute: 40, perDay: 20_000 }), bodyLimit({ maxSize: 3 * 1024 * 1024 }), saveFrame);
 
 const webRoot = "./dist/web";

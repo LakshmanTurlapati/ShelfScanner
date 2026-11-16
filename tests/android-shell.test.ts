@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { apiUrl, jpegFile } from "../web/src/api.ts";
 
@@ -63,13 +63,33 @@ describe("android shell", () => {
     expect(paths).toContain('<external-files-path name="my_images" path="Pictures/"');
   });
 
-  it("publishes a privacy policy that discloses the stored frames and links it in the app", () => {
-    const policy = read("../web/public/privacy.html");
-    expect(policy).toContain("Stored camera frames");
+  it("keeps the privacy policy in the repository and links it from the app and the notice", () => {
+    const policy = read("../PRIVACY.md");
+    expect(policy).toContain("## Stored camera frames");
     expect(policy).toContain("2,000");
     expect(policy).toContain("For you");
-    expect(read("../web/src/App.tsx")).toContain('apiUrl("/privacy.html")');
+    expect(policy).toContain("Reported answers");
+    expect(policy).toContain("third-party AI models");
+    expect(existsSync(new URL("../web/public/privacy.html", import.meta.url))).toBe(false);
+    const legal = read("../web/src/legal.ts");
+    expect(legal).toContain('"https://github.com/LakshmanTurlapati/ShelfScanner/blob/main/PRIVACY.md"');
+    expect(read("../web/src/App.tsx")).toContain("href={PRIVACY_URL}");
+    expect(read("../web/src/DataNotice.tsx")).toContain("href={PRIVACY_URL}");
     expect(read("../web/index.html")).not.toContain("fonts.googleapis.com");
+  });
+
+  it("ships Play listing art at the sizes the console accepts", () => {
+    const size = (path: string) => {
+      const png = readFileSync(new URL(path, import.meta.url));
+      return [png.readUInt32BE(16), png.readUInt32BE(20)];
+    };
+    expect(size("../docs/store/feature-graphic.png")).toEqual([1024, 500]);
+    for (const name of ["phone-1-covers", "phone-2-top-rated", "phone-3-ask"]) {
+      const [width, height] = size(`../docs/store/${name}.png`);
+      expect(Math.max(width, height) / Math.min(width, height)).toBeLessThanOrEqual(2);
+      expect(Math.min(width, height)).toBeGreaterThanOrEqual(320);
+      expect(Math.max(width, height)).toBeLessThanOrEqual(3840);
+    }
   });
 
   it("uses the resting shelf mark instead of the Capacitor launcher", () => {

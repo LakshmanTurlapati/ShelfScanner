@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { dismissProfile } from "./dismiss-profile";
+import { acceptNotice, dismissProfile } from "./dismiss-profile";
 
 function spine(title: string, position: number, x: number) {
   return {
@@ -458,6 +458,7 @@ test("a saved fantasy profile marks the Hobbit on the live label and the cover",
   await fakeCamera(page);
   await hobbitShelf(page);
   await page.goto("/");
+  await acceptNotice(page);
   const gate = page.getByRole("dialog", { name: "Who is this shelf for?" });
   await expect(gate).toBeVisible();
   await gate.getByRole("textbox").fill("Ada");
@@ -494,4 +495,49 @@ test("the splash shows on launch and then gets out of the way", async ({ page })
   await expect(splash).toContainText(/v\d+\.\d+ \| By Lakshman Turlapati/);
   await expect(page.getByRole("button", { name: "Read shelf" })).toBeVisible();
   await expect(splash).toHaveCount(0, { timeout: 4000 });
+});
+
+test("the camera waits for the data notice, and agreeing is remembered", async ({ page }) => {
+  await page.addInitScript(() => {
+    const camera = window as Window & { cameraAsks?: number };
+    camera.cameraAsks = 0;
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: { getUserMedia: () => { camera.cameraAsks = (camera.cameraAsks ?? 0) + 1; return Promise.reject(new Error("denied")); } },
+    });
+  });
+  await page.goto("/");
+  const notice = page.getByRole("dialog", { name: "Before the camera opens" });
+  await expect(notice).toBeVisible({ timeout: 6000 });
+  await expect(notice).toContainText("third-party AI models");
+  await expect(notice.getByRole("link", { name: "privacy policy" })).toHaveAttribute("href", /PRIVACY\.md$/);
+  await notice.getByRole("button", { name: "Not now" }).click();
+  await expect(notice.getByRole("alert")).toBeVisible();
+  expect(await page.evaluate(() => (window as Window & { cameraAsks?: number }).cameraAsks)).toBe(0);
+  await notice.getByRole("button", { name: "Agree and continue" }).click();
+  await page.getByRole("button", { name: "Skip for now" }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { cameraAsks?: number }).cameraAsks)).toBeGreaterThan(0);
+  await page.reload();
+  await expect(page.getByRole("status", { name: "Shelf Scanner is starting" })).toHaveCount(0, { timeout: 6000 });
+  await expect(page.getByRole("dialog", { name: "Before the camera opens" })).toHaveCount(0);
+});
+
+test("an answer can be reported from inside the app", async ({ page }) => {
+  await hobbitShelf(page);
+  await page.route("**/api/ask", (route) => route.fulfill({ status: 200, contentType: "text/plain", body: "- **The Hobbit** by J.R.R. Tolkien, 4.3. A short quest.\n" }));
+  let reported: unknown = null;
+  await page.route("**/api/report", async (route) => {
+    reported = route.request().postDataJSON();
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto("/");
+  await dismissProfile(page);
+  await page.getByRole("button", { name: "Open Shelf" }).click();
+  await page.getByLabel("Shelf photo").setInputFiles("tests/e2e/fixture.jpg");
+  await expect(page.getByRole("button", { name: "Cover of The Hobbit" })).toBeVisible();
+  await page.getByLabel("Ask the shelf").fill("Which one?");
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  await page.getByRole("button", { name: "Report this answer" }).click();
+  await page.getByRole("button", { name: "Offensive" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "This answer was reported for review." })).toBeVisible();
+  expect(reported).toEqual({ reason: "offensive", question: "Which one?", answer: "- **The Hobbit** by J.R.R. Tolkien, 4.3. A short quest.\n" });
 });

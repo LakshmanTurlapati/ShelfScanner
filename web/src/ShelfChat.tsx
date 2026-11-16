@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Book } from "../../shared/types.ts";
-import { askShelf, OfflineError } from "./api";
+import { askShelf, OfflineError, reportAnswer, type ReportReason } from "./api";
 import { renderMarkdown } from "./markdown";
 import { useShelf } from "./store";
 
@@ -19,6 +19,7 @@ export function ShelfChat({ books }: { books: Book[] }) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const current = useRef<AbortController | null>(null);
+  const [reporting, setReporting] = useState<"closed" | "choosing" | "sending" | "sent" | "failed">("closed");
 
   // App keys this view by session, so leaving a shelf cancels its answer and a late chunk
   // cannot land under the next one.
@@ -43,6 +44,7 @@ export function ShelfChat({ books }: { books: Book[] }) {
     setAsked(question);
     setDraft("");
     setError("");
+    setReporting("closed");
     setAsking(true);
     setAnswer("");
     stick.current = true;
@@ -64,6 +66,18 @@ export function ShelfChat({ books }: { books: Book[] }) {
       }
     }
   }
+
+  async function report(reason: ReportReason) {
+    setReporting("sending");
+    try {
+      await reportAnswer({ reason, question: asked, answer });
+      setReporting("sent");
+    } catch {
+      setReporting("failed");
+    }
+  }
+
+  const finished = Boolean(asked && answer && !asking);
 
   return (
     <div className="mb-3">
@@ -91,6 +105,23 @@ export function ShelfChat({ books }: { books: Book[] }) {
           <div className="mr-10 rounded-2xl border border-[#eadfd4] bg-white px-3 py-2 text-sm leading-6 text-[#1f1a17] [overflow-wrap:anywhere]">
             {answer && <div className="shelf-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(answer, asking) }} />}
             {error && <p className={`text-[#8a3b2c] ${answer ? "mt-1" : ""}`}>{answer ? `The answer stopped early. ${error}` : error}</p>}
+            {finished && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[#f1ebe4] pt-2 text-xs text-[#6a584d]">
+                {reporting === "closed" && (
+                  <button className="underline" type="button" onClick={() => setReporting("choosing")}>Report this answer</button>
+                )}
+                {(reporting === "choosing" || reporting === "failed") && (
+                  <>
+                    <span>{reporting === "failed" ? "That report did not send. Try again:" : "What is wrong with it?"}</span>
+                    <button className="rounded-full bg-[#f1ebe4] px-2 py-1" type="button" onClick={() => void report("offensive")}>Offensive</button>
+                    <button className="rounded-full bg-[#f1ebe4] px-2 py-1" type="button" onClick={() => void report("wrong")}>Wrong or made up</button>
+                    <button className="underline" type="button" onClick={() => setReporting("closed")}>Cancel</button>
+                  </>
+                )}
+                {reporting === "sending" && <span>Sending…</span>}
+                {reporting === "sent" && <span role="status">Thanks. This answer was reported for review.</span>}
+              </div>
+            )}
             {asking && (
               <p className="mt-1 flex gap-1" aria-label="Writing an answer">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#a58e5f]" />

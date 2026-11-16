@@ -216,8 +216,9 @@ export const useShelf = create<State>((setState, getState) => ({
     // both, where replacing would drop the history and the next write would make that permanent.
     const { sessions: live, currentId } = getState();
     const known = new Set(live.map((session) => session.id));
-    const sessions = capSessions([...live, ...(saved?.sessions ?? []).filter((session) => !known.has(session.id))], currentId);
+    // The cap must keep the shelf that will be open, which may be the saved one.
     const selected = currentId ?? saved?.currentId ?? null;
+    const sessions = capSessions([...live, ...(saved?.sessions ?? []).filter((session) => !known.has(session.id))], selected);
     setState({ ready: true, sessions, currentId: selected });
     if (live.length) persist(sessions, selected);
   },

@@ -215,3 +215,28 @@ describe("rate limit memory", () => {
     expect(hits.get("busy")).toEqual([now - 1000]);
   });
 });
+
+describe("answer reports", () => {
+  let app: Hono;
+  let db: Database.Database;
+
+  beforeAll(async () => {
+    const file = path.join(mkdtempSync(path.join(tmpdir(), "reports-")), "reports.db");
+    process.env.REPORTS_DB = file;
+    const { report } = await import("../server/routes/report.ts");
+    app = new Hono().post("/api/report", report);
+    db = new Database(file);
+  });
+
+  it("stores a report for review", async () => {
+    const res = await app.request("/api/report", json({ reason: "offensive", question: "Which?", answer: "A rude answer." }));
+    expect(res.status).toBe(204);
+    expect(db.prepare("SELECT reason, question, answer FROM reports").all()).toEqual([{ reason: "offensive", question: "Which?", answer: "A rude answer." }]);
+  });
+
+  it("rejects an unknown reason, an empty answer, and bad JSON", async () => {
+    expect((await app.request("/api/report", json({ reason: "spam", question: "Which?", answer: "x" }))).status).toBe(400);
+    expect((await app.request("/api/report", json({ reason: "wrong", question: "Which?", answer: "   " }))).status).toBe(400);
+    expect((await app.request("/api/report", { method: "POST", headers: { "content-type": "application/json" }, body: "{" })).status).toBe(400);
+  });
+});

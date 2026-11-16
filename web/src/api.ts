@@ -148,6 +148,16 @@ export async function embedBooks(items: Array<{ key: string; text: string }>) {
   return (await res.json()) as { items: Array<{ key: string; embedding: number[] }> };
 }
 
+export type ReportReason = "offensive" | "wrong";
+
+export async function reportAnswer(input: { reason: ReportReason; question: string; answer: string }) {
+  await send("/api/report", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ reason: input.reason, question: input.question.slice(0, 500), answer: input.answer.slice(0, 8000) }),
+  }, false, 20_000);
+}
+
 export async function saveFrame(image: Blob, meta: unknown) {
   const form = new FormData();
   form.append("image", jpegFile(image, "frame.jpg"), "frame.jpg");
