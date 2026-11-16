@@ -5,7 +5,7 @@
 <img src="web/public/logo.svg" alt="Shelf Scanner mark" width="160" />
 
 ![Shelf Scanner](https://img.shields.io/badge/Shelf_Scanner-point_at_a_shelf-141110?style=for-the-badge)
-![Version](https://img.shields.io/badge/version-0.14.1-ff6b35?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.14.2-ff6b35?style=for-the-badge)
 ![Android](https://img.shields.io/badge/Android-Capacitor-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 
 ![Stars](https://img.shields.io/github/stars/LakshmanTurlapati/ShelfScanner?style=flat-square&logo=github&label=Stars)
@@ -88,7 +88,7 @@ These frames are from an Android 15 emulator. The live view is the emulator came
 
 ## Android app
 
-The package is `app.shelfscanner.phone`, version 0.14.1 (versionCode 2). The label is Shelf Scanner.
+The package is `app.shelfscanner.phone`, version 0.14.2 (versionCode 3). The label is Shelf Scanner.
 
 A debug APK is enough to sideload. You need Node 24, the Android SDK, and a device or emulator with USB debugging:
 
@@ -100,6 +100,8 @@ adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 The live camera is `getUserMedia` inside the WebView. Packaged API calls go to the Fly app. Ask the shelf is the exception: a small native plugin reads that stream, because the usual Capacitor HTTP client waits for the whole body.
 
 APK and AAB files are build outputs. They are not committed.
+
+The privacy policy is [`web/public/privacy.html`](web/public/privacy.html). The server publishes it at <https://shelf-scanner.fly.dev/privacy.html>, which is the address for the Play Console, and the Sessions panel links to it. Keep it in step with what the app sends.
 
 ## Architecture
 

@@ -37,10 +37,39 @@ describe("android shell", () => {
     expect(manifest).toContain('android:dataExtractionRules="@xml/data_extraction_rules"');
     expect(manifest).toContain('android:usesCleartextTraffic="false"');
     expect(read("../android/app/src/main/res/values/strings.xml")).toContain("Shelf Scanner");
-    expect(read("../android/app/build.gradle")).toContain('versionName "0.14.1"');
-    expect(read("../android/app/build.gradle")).toContain("versionCode 2");
+    expect(read("../android/app/build.gradle")).toContain('versionName "0.14.2"');
+    expect(read("../android/app/build.gradle")).toContain("versionCode 3");
     expect(read("../android/app/build.gradle")).toContain("minifyEnabled true");
     expect(read("../android/app/build.gradle")).toContain("SHELF_KEYSTORE");
+  });
+
+  it("streams Ask off the shared bridge thread, can cancel it, and only talks to the API host", () => {
+    const plugin = read("../android/app/src/main/java/app/shelfscanner/phone/ShelfNativePlugin.java");
+    const native = read("../web/src/native.ts");
+    expect(plugin).not.toContain("getBridge().execute");
+    expect(plugin).toContain("Executors.newCachedThreadPool()");
+    expect(plugin).toContain("public void cancel(PluginCall call)");
+    expect(native).toContain("cancel(options: { requestId: string })");
+    const host = read("../android/app/src/main/res/values/strings.xml").match(/name="shelf_api_host"[^>]*>([^<]+)</)?.[1];
+    const base = read("../package.json").match(/VITE_API_BASE=https:\/\/([^\s"]+)/)?.[1];
+    expect(host).toBeTruthy();
+    expect(host).toBe(base);
+    expect(plugin).toContain("R.string.shelf_api_host");
+  });
+
+  it("shares only the app's own picture folder and cache through the file provider", () => {
+    const paths = read("../android/app/src/main/res/xml/file_paths.xml");
+    expect(paths).not.toContain("<external-path");
+    expect(paths).toContain('<external-files-path name="my_images" path="Pictures/"');
+  });
+
+  it("publishes a privacy policy that discloses the stored frames and links it in the app", () => {
+    const policy = read("../web/public/privacy.html");
+    expect(policy).toContain("Stored camera frames");
+    expect(policy).toContain("2,000");
+    expect(policy).toContain("For you");
+    expect(read("../web/src/App.tsx")).toContain('apiUrl("/privacy.html")');
+    expect(read("../web/index.html")).not.toContain("fonts.googleapis.com");
   });
 
   it("uses the resting shelf mark instead of the Capacitor launcher", () => {
