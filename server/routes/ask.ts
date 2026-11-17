@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { MODELS } from "../../shared/models.ts";
-import { capped } from "../guards.ts";
+import { capped, readJson } from "../guards.ts";
 import { openrouterStream } from "../openrouter.ts";
 import { readPrompt } from "../prompts.ts";
 
@@ -31,7 +31,7 @@ export function shelfRecords(books: Record<string, unknown>[]) {
 }
 
 export async function ask(c: Context) {
-  const parsed = bodySchema.safeParse(await c.req.json());
+  const parsed = bodySchema.safeParse(await readJson(c));
   if (!parsed.success || !capped(parsed.data.question)) return c.text("invalid question", 400);
   const compact = shelfRecords(parsed.data.books);
   let upstream: ReadableStream<Uint8Array>;
@@ -49,9 +49,12 @@ export async function ask(c: Context) {
   }
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
+  const reader = upstream.getReader();
+  let left = false;
+  // A failure (an upstream error frame, a dropped connection, the 45 s timeout) errors the body
+  // instead of closing it, so the phone reports a broken answer rather than a short one.
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const reader = upstream.getReader();
       let buffer = "";
       try {
         for (;;) {
@@ -65,18 +68,29 @@ export async function ask(c: Context) {
             if (!trimmed.startsWith("data:")) continue;
             const data = trimmed.slice(5).trim();
             if (data === "[DONE]") continue;
+            let json: { error?: unknown; choices?: Array<{ delta?: { content?: unknown } }> };
             try {
-              const json = JSON.parse(data);
-              const text = json.choices?.[0]?.delta?.content;
-              if (typeof text === "string" && text) controller.enqueue(encoder.encode(text));
+              json = JSON.parse(data);
             } catch {
-              // ignore a partial SSE frame
+              continue; // a partial SSE frame
             }
+            if (json.error) throw new Error("upstream error");
+            const text = json.choices?.[0]?.delta?.content;
+            if (typeof text === "string" && text) controller.enqueue(encoder.encode(text));
           }
         }
-      } finally {
         controller.close();
+      } catch (error) {
+        if (left) return;
+        console.log(JSON.stringify({ route: "/api/ask", failed: "stream", error: error instanceof Error ? error.name : "unknown" }));
+        await reader.cancel().catch(() => undefined);
+        controller.error(error);
       }
+    },
+    // The phone left; stop the model too.
+    cancel() {
+      left = true;
+      return reader.cancel().catch(() => undefined);
     },
   });
   return c.body(stream, 200, { "content-type": "text/plain; charset=utf-8" });

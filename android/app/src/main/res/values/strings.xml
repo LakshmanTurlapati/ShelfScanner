@@ -2,4 +2,6 @@
 <resources>
     <string name="app_name">Shelf Scanner</string>
     <string name="title_activity_main">Shelf Scanner</string>
+    <!-- ShelfNative only streams from this host. Keep it in step with VITE_API_BASE in build:android. -->
+    <string name="shelf_api_host" translatable="false">shelf-scanner.fly.dev</string>
 </resources>

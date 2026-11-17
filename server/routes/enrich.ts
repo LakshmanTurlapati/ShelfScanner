@@ -4,7 +4,7 @@ import { MODELS } from "../../shared/models.ts";
 import { BookFacts, BOOK_JSON_SCHEMA } from "../../shared/schemas.ts";
 import { PROMPT_VERSION } from "../../shared/models.ts";
 import { embeddingFrom, fresh, openCache, type CacheRow } from "../cache.ts";
-import { capped } from "../guards.ts";
+import { capped, readJson } from "../guards.ts";
 import { openrouter } from "../openrouter.ts";
 import { readPrompt } from "../prompts.ts";
 import { normalizeFacts, verify } from "../verify.ts";
@@ -15,7 +15,7 @@ const rules = readPrompt("enrich.md").replace("{{genres}}", GENRES.join(", "));
 const bodySchema = z.object({
   title: z.string(),
   author: z.string().nullable().optional(),
-  callNumber: z.string().nullable().optional(),
+  callNumber: z.string().max(100).nullable().optional(),
 });
 
 const db = openCache();
@@ -107,7 +107,7 @@ function parseContent(content: unknown) {
 }
 
 export async function enrich(c: Context) {
-  const parsed = bodySchema.safeParse(await c.req.json());
+  const parsed = bodySchema.safeParse(await readJson(c));
   if (!parsed.success || !capped(parsed.data.title) || (parsed.data.author != null && !capped(parsed.data.author))) {
     return c.text("invalid book", 400);
   }
@@ -146,6 +146,10 @@ export async function enrich(c: Context) {
     fetched_at: now,
   };
   save.run({ key, ...row });
-  if (canonical && canonical !== key) save.run({ key: canonical, ...row });
+  // The alias lets a later reading of the true title hit the cache. A flagged answer, or a title
+  // that already has its own fresh record, must not overwrite what every other phone gets.
+  if (canonical && canonical !== key && !checked.flags.includes("possible_mismatch") && !fresh(lookup.get(canonical) as CacheRow | undefined, MODELS.enrich)) {
+    save.run({ key: canonical, ...row });
+  }
   return c.json({ ...record, cached: false });
 }

@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import pLimit from "p-limit";
 import { httpsCoverUrl, normalizeTitle } from "../shared/cover-text.ts";
 import { isValidIsbn13 } from "./verify.ts";
 
@@ -114,11 +115,17 @@ function googleUrl(isbn: string | null, title: string, author: string) {
 
 // Cached ids and checked misses are returned without another request. A failed
 // request omits that book so the phone can try again. Image bytes are never read.
+// Each book can wait on Open Library and then Google Books, so books are looked up a few at a
+// time and the request stops waiting at a deadline. A book still pending then is omitted like any
+// other failed lookup, and the phone asks again later.
+export type CoverOptions = { concurrency?: number; deadlineMs?: number };
+
 export async function resolveCoverQueries(
   db: Sqlite,
   lookups: readonly CoverLookup[],
   fetchImpl: typeof fetch,
   now = () => Math.floor(Date.now() / 1000),
+  { concurrency = 6, deadlineMs = 25_000 }: CoverOptions = {},
 ): Promise<CoverAnswer[]> {
   const lookup = db.prepare("SELECT cover_id, cover_url, fetched_at FROM covers WHERE isbn = ?");
   const save = db.prepare(`
@@ -167,13 +174,14 @@ export async function resolveCoverQueries(
     }
   }
 
-  for (const item of prepared) {
-    if (answers.has(item.key)) continue;
+  let expired = false;
+  const lookUp = async (item: (typeof prepared)[number]) => {
+    if (expired || answers.has(item.key)) return;
     const direct = item.isbn ? fromBooks.get(item.isbn) : undefined;
     if (typeof direct === "number") {
       save.run(item.key, direct, null, stamp);
       answers.set(item.key, { isbn: item.isbn, title: item.title || null, author: item.author || null, coverId: direct, coverUrl: null });
-      continue;
+      return;
     }
     let transient = item.isbn ? booksTransient && direct === undefined : false;
     let foundId: number | null = null;
@@ -182,18 +190,26 @@ export async function resolveCoverQueries(
       const search = await readJson(fetchImpl, searchUrl(item.isbn, item.title, item.author));
       if (search.transient) transient = true;
       else foundId = coverIdFromSearch(search.body);
-      if (!foundId) {
+      if (!foundId && !expired) {
         const google = await readJson(fetchImpl, googleUrl(item.isbn, item.title, item.author));
         if (google.transient) transient = true;
         else foundUrl = coverUrlFromGoogle(google.body);
       }
     }
-    if (!foundId && !foundUrl && transient) continue;
-    const coverId = foundId;
-    const coverUrl = foundUrl;
-    save.run(item.key, coverId, coverUrl, stamp);
-    answers.set(item.key, { isbn: item.isbn, title: item.title || null, author: item.author || null, coverId, coverUrl });
-  }
+    if (expired) return;
+    if (!foundId && !foundUrl && transient) return;
+    save.run(item.key, foundId, foundUrl, stamp);
+    answers.set(item.key, { isbn: item.isbn, title: item.title || null, author: item.author || null, coverId: foundId, coverUrl: foundUrl });
+  };
+  const limit = pLimit(concurrency);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, deadlineMs);
+  });
+  await Promise.race([Promise.all(prepared.map((item) => limit(() => lookUp(item)))), deadline]);
+  expired = true;
+  clearTimeout(timer);
+  limit.clearQueue();
 
   const ordered: CoverAnswer[] = [];
   const emitted = new Set<string>();

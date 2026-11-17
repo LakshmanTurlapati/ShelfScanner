@@ -338,7 +338,14 @@ export async function enrichOne(key: string, title: string, author: string | nul
   const sessionId = store.currentId;
   if (!sessionId) return;
   store.patchBookFor(sessionId, key, { status: "enriching", canonicalTitle: title, authors: author ? [author] : [] });
-  const result = await enrichBook({ title, author, callNumber: null });
+  let result: Awaited<ReturnType<typeof enrichBook>>;
+  try {
+    result = await enrichBook({ title, author, callNumber: null });
+  } catch (err) {
+    // An error status brings back the card's Retry; "enriching" would stay on "Looking it up".
+    store.patchBookFor(sessionId, key, { status: "error", error: err instanceof Error ? err.message : "failed" });
+    return;
+  }
   const facts = result.facts;
   store.patchBookFor(sessionId, key, {
     ...verifiedPatch(facts, result.flags),
@@ -347,5 +354,5 @@ export async function enrichOne(key: string, title: string, author: string | nul
   });
   const session = useShelf.getState().sessions.find((item) => item.id === sessionId);
   if (session) store.setBooksFor(sessionId, withScores(session.books));
-  await fillCovers(sessionId);
+  await fillCovers(sessionId).catch(() => undefined);
 }

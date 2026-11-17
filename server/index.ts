@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { openCache, purgeExpired } from "./cache.ts";
 import { rateLimit } from "./guards.ts";
 import { ask } from "./routes/ask.ts";
 import { covers } from "./routes/covers.ts";
@@ -12,6 +13,7 @@ import { enrich } from "./routes/enrich.ts";
 import { saveFrame } from "./routes/frames.ts";
 import { quickFacts } from "./routes/quick-facts.ts";
 import { readStrip } from "./routes/read-strip.ts";
+import { report } from "./routes/report.ts";
 
 function loadEnv() {
   const file = path.resolve(".env");
@@ -27,6 +29,24 @@ function loadEnv() {
 }
 
 loadEnv();
+
+if (!process.env.OPENROUTER_API_KEY) {
+  console.log(JSON.stringify({ route: "startup", warning: "OPENROUTER_API_KEY is not set; reads, lookups and Ask will fail" }));
+}
+
+// Expired rows are never read again; deleting them keeps the cache volume from filling.
+const PURGE_MS = 60 * 60 * 1000;
+const purgeDb = openCache();
+const purge = () => {
+  try {
+    const removed = purgeExpired(purgeDb);
+    console.log(JSON.stringify({ route: "purge", ...removed }));
+  } catch (error) {
+    console.log(JSON.stringify({ route: "purge", failed: error instanceof Error ? error.message : "unknown" }));
+  }
+};
+purge();
+setInterval(purge, PURGE_MS).unref();
 
 const app = new Hono();
 
@@ -53,6 +73,7 @@ app.post("/api/covers", lookupLimit, bodyLimit({ maxSize: 8 * 1024 }), covers);
 app.post("/api/quick-facts", rateLimit({ perMinute: 300, perDay: 5_000 }), bodyLimit({ maxSize: 16 * 1024 }), quickFacts);
 app.post("/api/embed", rateLimit({ perMinute: 60, perDay: 2_000 }), bodyLimit({ maxSize: 256 * 1024 }), embed);
 app.post("/api/ask", apiLimit, bodyLimit({ maxSize: 256 * 1024 }), ask);
+app.post("/api/report", rateLimit({ perMinute: 10, perDay: 100 }), bodyLimit({ maxSize: 16 * 1024 }), report);
 app.post("/api/frames", rateLimit({ perMinute: 40, perDay: 20_000 }), bodyLimit({ maxSize: 3 * 1024 * 1024 }), saveFrame);
 
 const webRoot = "./dist/web";

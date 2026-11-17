@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { apiUrl, jpegFile } from "../web/src/api.ts";
 
@@ -37,10 +37,59 @@ describe("android shell", () => {
     expect(manifest).toContain('android:dataExtractionRules="@xml/data_extraction_rules"');
     expect(manifest).toContain('android:usesCleartextTraffic="false"');
     expect(read("../android/app/src/main/res/values/strings.xml")).toContain("Shelf Scanner");
-    expect(read("../android/app/build.gradle")).toContain('versionName "0.14.1"');
-    expect(read("../android/app/build.gradle")).toContain("versionCode 2");
+    expect(read("../android/app/build.gradle")).toContain('versionName "0.14.2"');
+    expect(read("../android/app/build.gradle")).toContain("versionCode 3");
     expect(read("../android/app/build.gradle")).toContain("minifyEnabled true");
     expect(read("../android/app/build.gradle")).toContain("SHELF_KEYSTORE");
+  });
+
+  it("streams Ask off the shared bridge thread, can cancel it, and only talks to the API host", () => {
+    const plugin = read("../android/app/src/main/java/app/shelfscanner/phone/ShelfNativePlugin.java");
+    const native = read("../web/src/native.ts");
+    expect(plugin).not.toContain("getBridge().execute");
+    expect(plugin).toContain("Executors.newCachedThreadPool()");
+    expect(plugin).toContain("public void cancel(PluginCall call)");
+    expect(native).toContain("cancel(options: { requestId: string })");
+    const host = read("../android/app/src/main/res/values/strings.xml").match(/name="shelf_api_host"[^>]*>([^<]+)</)?.[1];
+    const base = read("../package.json").match(/VITE_API_BASE=https:\/\/([^\s"]+)/)?.[1];
+    expect(host).toBeTruthy();
+    expect(host).toBe(base);
+    expect(plugin).toContain("R.string.shelf_api_host");
+  });
+
+  it("shares only the app's own picture folder and cache through the file provider", () => {
+    const paths = read("../android/app/src/main/res/xml/file_paths.xml");
+    expect(paths).not.toContain("<external-path");
+    expect(paths).toContain('<external-files-path name="my_images" path="Pictures/"');
+  });
+
+  it("keeps the privacy policy in the repository and links it from the app and the notice", () => {
+    const policy = read("../PRIVACY.md");
+    expect(policy).toContain("## Stored camera frames");
+    expect(policy).toContain("2,000");
+    expect(policy).toContain("For you");
+    expect(policy).toContain("Reported answers");
+    expect(policy).toContain("third-party AI models");
+    expect(existsSync(new URL("../web/public/privacy.html", import.meta.url))).toBe(false);
+    const legal = read("../web/src/legal.ts");
+    expect(legal).toContain('"https://github.com/LakshmanTurlapati/ShelfScanner/blob/main/PRIVACY.md"');
+    expect(read("../web/src/App.tsx")).toContain("href={PRIVACY_URL}");
+    expect(read("../web/src/DataNotice.tsx")).toContain("href={PRIVACY_URL}");
+    expect(read("../web/index.html")).not.toContain("fonts.googleapis.com");
+  });
+
+  it("ships Play listing art at the sizes the console accepts", () => {
+    const size = (path: string) => {
+      const png = readFileSync(new URL(path, import.meta.url));
+      return [png.readUInt32BE(16), png.readUInt32BE(20)];
+    };
+    expect(size("../docs/store/feature-graphic.png")).toEqual([1024, 500]);
+    for (const name of ["phone-1-covers", "phone-2-top-rated", "phone-3-ask"]) {
+      const [width, height] = size(`../docs/store/${name}.png`);
+      expect(Math.max(width, height) / Math.min(width, height)).toBeLessThanOrEqual(2);
+      expect(Math.min(width, height)).toBeGreaterThanOrEqual(320);
+      expect(Math.max(width, height)).toBeLessThanOrEqual(3840);
+    }
   });
 
   it("uses the resting shelf mark instead of the Capacitor launcher", () => {

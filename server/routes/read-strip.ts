@@ -34,12 +34,25 @@ function messageText(json: ChatJson) {
   return "";
 }
 
+// The hedged and fallback requests all carry the same strip; encoding it once per upload keeps
+// a 3 MB strip from becoming several 4 MB strings on a 160 MB heap.
+const dataUrls = new WeakMap<Buffer, string>();
+
+function dataUrl(image: Buffer) {
+  let url = dataUrls.get(image);
+  if (!url) {
+    url = `data:image/jpeg;base64,${image.toString("base64")}`;
+    dataUrls.set(image, url);
+  }
+  return url;
+}
+
 function imageMessage(text: string, image: Buffer) {
   return {
     role: "user" as const,
     content: [
       { type: "text", text },
-      { type: "image_url", image_url: { url: `data:image/jpeg;base64,${image.toString("base64")}` } },
+      { type: "image_url", image_url: { url: dataUrl(image) } },
     ],
   };
 }
@@ -162,6 +175,8 @@ export async function readStrip(c: Context) {
   }
   const image = Buffer.from(await c.req.arrayBuffer());
   if (image.length === 0) return c.text("empty image", 400);
+  // Only a JPEG is worth a model call.
+  if (image.length < 3 || image[0] !== 0xff || image[1] !== 0xd8) return c.text("not a jpeg", 400);
   if (process.env.READ_MODE === "pair") return readPair(c, image, strip, of);
   const started = Date.now();
   const read = await readByLines(image, strip, of, c.req.raw.signal);

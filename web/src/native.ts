@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor
 
 export interface ShelfNativePlugin {
   stream(options: { url: string; body: string; requestId: string }): Promise<{ requestId: string }>;
+  cancel(options: { requestId: string }): Promise<void>;
   isOnline(): Promise<{ online: boolean }>;
   cameraAccess(): Promise<{ state: "granted" | "denied" | "blocked" }>;
   openSettings(): Promise<void>;
