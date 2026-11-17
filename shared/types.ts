@@ -48,7 +48,12 @@ export type Detection = {
   stripSpan?: [number, number] | null;
 };
 
-export type Pin = { x: number; row: number };
+/**
+ * Where a walk first saw a book: `x` in frame widths along the shelf and `row` counted from the top.
+ * `section` is the shelf the walk was on (New shelf starts the next one); `frame` is the read the
+ * pin came from, so the pin can follow when that read is placed better.
+ */
+export type Pin = { x: number; row: number; section?: number; frame?: string };
 
 export type Book = {
   key: string;

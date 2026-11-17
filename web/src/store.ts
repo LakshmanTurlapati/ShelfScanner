@@ -1,7 +1,8 @@
 import { get, set } from "idb-keyval";
 import { create } from "zustand";
 import type { Book, Session } from "../../shared/types.ts";
-import { pinFor, shelfOrigin } from "./walk.ts";
+import { clonePin, finitePin } from "./pin.ts";
+import { currentWalk, endWalk, framePlace, onFramesMoved, pinFor, type Place } from "./walk.ts";
 
 const STORE_KEY = "shelf-scanner-sessions";
 
@@ -22,6 +23,7 @@ type State = {
   mergeBooksFor: (id: string, books: Book[]) => void;
   addFrame: (id: string) => void;
   patchBookFor: (id: string, key: string, patch: Partial<Book>) => void;
+  repinFrames: (frameIds: readonly string[], before: ReadonlyMap<string, Place>) => void;
   setProgressFor: (id: string, progress: string) => void;
   removeSession: (id: string) => void;
   openSession: (id: string) => void;
@@ -29,6 +31,10 @@ type State = {
 };
 
 const PERSIST_MS = 500;
+// A long library walk holds hundreds of books, each with an embedding, so the whole history is
+// written less often once it is that large. Hiding the page still writes it straight away.
+const PERSIST_LARGE_MS = 2000;
+const LARGE_HISTORY = 300;
 let unsaved: { sessions: Session[]; currentId: string | null } | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -45,7 +51,8 @@ function flush() {
 // A scan patches books many times a second; one write per 500ms keeps IndexedDB off the hot path.
 function persist(sessions: Session[], currentId: string | null) {
   unsaved = { sessions, currentId };
-  timer ??= setTimeout(flush, PERSIST_MS);
+  const books = sessions.reduce((sum, session) => sum + session.books.length, 0);
+  timer ??= setTimeout(flush, books > LARGE_HISTORY ? PERSIST_LARGE_MS : PERSIST_MS);
 }
 
 if (typeof document !== "undefined") {
@@ -94,12 +101,6 @@ function withoutKey(book: Book, key: "pin" | "coverId" | "coverUrl"): Book {
   return next;
 }
 
-function finitePin(value: unknown): value is { x: number; row: number } {
-  if (!value || typeof value !== "object") return false;
-  const pin = value as { x?: unknown; row?: unknown };
-  return typeof pin.x === "number" && Number.isFinite(pin.x) && typeof pin.row === "number" && Number.isFinite(pin.row);
-}
-
 function legalCover(value: unknown): value is number | null {
   return value === null || (typeof value === "number" && Number.isInteger(value) && value > 0);
 }
@@ -137,8 +138,8 @@ function coverUrlChoice(stored: Book, incoming: Book): string | null | undefined
 }
 
 function pinChoice(stored: Book, incoming: Book): Book["pin"] | undefined {
-  if (finitePin(stored.pin)) return { x: stored.pin.x, row: stored.pin.row };
-  if (finitePin(incoming.pin)) return { x: incoming.pin.x, row: incoming.pin.row };
+  if (finitePin(stored.pin)) return clonePin(stored.pin);
+  if (finitePin(incoming.pin)) return clonePin(incoming.pin);
   return undefined;
 }
 
@@ -179,12 +180,12 @@ function withoutDisallowed(session: Session, book: Book): Book {
   const pinMissing = !("pin" in next) || next.pin === undefined || (!finitePin(next.pin) && next.pin !== null);
   if (!walk || pinMissing) {
     if (walk && pinMissing) {
-      const placed = pinFor(next, shelfOrigin(session.id));
+      const placed = pinFor(next);
       if (placed) next = { ...next, pin: placed };
       else if ("pin" in next) next = withoutKey(next, "pin");
     } else if ("pin" in next) next = withoutKey(next, "pin");
   } else if (finitePin(next.pin)) {
-    next = { ...next, pin: { x: next.pin.x, row: next.pin.row } };
+    next = { ...next, pin: clonePin(next.pin) };
   }
   if (!stamped || !("coverId" in next) || next.coverId === undefined || !legalCover(next.coverId)) {
     if ("coverId" in next) next = withoutKey(next, "coverId");
@@ -271,10 +272,39 @@ export const useShelf = create<State>((setState, getState) => ({
     setState({ sessions: next });
     persist(next, currentId);
   },
+  // A read placed better (matched titles, or linked to an earlier read) moves the pins it gave by
+  // as much as it moved. A book a later read saw again carries that read's detections instead, so
+  // the pin cannot be rebuilt from this read's detection.
+  repinFrames: (frameIds, before) => {
+    const moved = new Set(frameIds);
+    const { sessions, currentId } = getState();
+    let changed = false;
+    const next = sessions.map((session) => {
+      if (session.contract !== CONTRACT || session.mode !== "walk") return session;
+      let touched = false;
+      const books = session.books.map((book) => {
+        if (!finitePin(book.pin) || !book.pin.frame || !moved.has(book.pin.frame)) return book;
+        const from = before.get(book.pin.frame);
+        const to = framePlace(book.pin.frame);
+        if (!from || !to) return book;
+        const pin = clonePin({ ...book.pin, x: book.pin.x + to.x - from.x, row: book.pin.row + to.rowOffset - from.rowOffset, section: to.section });
+        if (!finitePin(pin) || (pin.x === book.pin.x && pin.row === book.pin.row && pin.section === book.pin.section)) return book;
+        touched = true;
+        return { ...book, pin };
+      });
+      if (!touched) return session;
+      changed = true;
+      return { ...session, books };
+    });
+    if (!changed) return;
+    setState({ sessions: next });
+    persist(next, currentId);
+  },
   setProgressFor: (id, progress) => {
     if (getState().currentId === id) setState({ progress });
   },
   removeSession: (id) => {
+    if (id === currentWalk()) endWalk();
     const { sessions, currentId, progress } = getState();
     const next = sessions.filter((session) => session.id !== id);
     const selected = currentId === id ? next[0]?.id ?? null : currentId;
@@ -286,10 +316,13 @@ export const useShelf = create<State>((setState, getState) => ({
     persist(getState().sessions, id);
   },
   clearLocal: () => {
+    endWalk();
     setState({ sessions: [], currentId: null, progress: "", answer: "" });
     persist([], null);
   },
 }));
+
+onFramesMoved((frameIds, before) => useShelf.getState().repinFrames(frameIds, before));
 
 export function currentSession(state: State) {
   return state.sessions.find((session) => session.id === state.currentId) ?? null;

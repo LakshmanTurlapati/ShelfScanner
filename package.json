@@ -1,7 +1,7 @@
 {
   "name": "shelf-scanner",
   "private": true,
-  "version": "0.14.2",
+  "version": "0.15.0",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -24,6 +24,7 @@
     "eval:record": "tsx eval/record.ts",
     "eval:record-boxes": "tsx eval/record-boxes.ts",
     "eval:track": "tsx eval/track-bench.ts",
+    "eval:relocate": "tsx eval/track-bench/relocate.ts",
     "frames:pull": "tsx scripts/pull-frames.ts",
     "reports:pull": "tsx scripts/pull-reports.ts",
     "store:assets": "node scripts/store-assets.mjs"

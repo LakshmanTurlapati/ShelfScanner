@@ -5,7 +5,10 @@ import type { LiveLabel } from "./live-layout";
 export type FrameLabel = LiveLabel & { title: string; rating: number | null };
 
 export type FrameState = {
+  /** The latest read. */
   captureId: string | null;
+  /** The read the view is tracked against; labels can come from any read joined to it. */
+  activeId: string | null;
   status: string;
   reading: boolean;
   lost: boolean;

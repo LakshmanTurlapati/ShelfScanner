@@ -9,7 +9,7 @@ const MAX_GAP_MS = 1000;
 const MIN_SPREAD = 0.03;
 // Both measures below are relative to the frame's own contrast, so dim light and flat shelves pass.
 // Measured on frames drawn from a <video> at 96px: shelves have about 0.2 of their pixels on an edge.
-const MIN_TEXTURE = 0.05;
+export const MIN_TEXTURE = 0.05;
 // Laplacian variance over brightness variance: sharp shelves about 0.65 at any exposure, an 8px blur
 // on a 1080px frame about 0.12, a 16px blur about 0.02.
 const MIN_SHARPNESS = 0.1;

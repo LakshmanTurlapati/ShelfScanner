@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Book } from "../../shared/types.ts";
-import { askShelf, OfflineError, reportAnswer, type ReportReason } from "./api";
+import { ASK_BOOK_LIMIT, askShelf, OfflineError, reportAnswer, type ReportReason } from "./api";
 import { renderMarkdown } from "./markdown";
 import { useShelf } from "./store";
+import { activeWalk, walkPosition } from "./walk";
 
 function nearBottom(node: HTMLElement) {
   return node.scrollHeight - node.scrollTop - node.clientHeight < 48;
 }
 
-export function ShelfChat({ books }: { books: Book[] }) {
+export function ShelfChat({ books, walkId = null }: { books: Book[]; walkId?: string | null }) {
   const answer = useShelf((state) => state.answer);
   const asking = useShelf((state) => state.asking);
   const setAnswer = useShelf((state) => state.setAnswer);
@@ -55,7 +56,7 @@ export function ShelfChat({ books }: { books: Book[] }) {
       await askShelf(question, books, (chunk) => {
         if (current.current !== controller) return;
         setAnswer(useShelf.getState().answer + chunk);
-      }, controller.signal);
+      }, controller.signal, { walk: walkId !== null, position: walkId !== null && walkId === activeWalk() ? walkPosition() : null });
     } catch (err) {
       if (controller.signal.aborted) return;
       setError(err instanceof OfflineError ? err.message : "The shelf could not answer. Try again.");
@@ -93,6 +94,15 @@ export function ShelfChat({ books }: { books: Book[] }) {
           Ask
         </button>
       </form>
+      {books.length > ASK_BOOK_LIMIT && (
+        <p className="mt-1 text-xs text-[#6a584d]">
+          {walkId !== null && walkId === activeWalk() && walkPosition()
+            ? `Asking about the ${ASK_BOOK_LIMIT} books nearest you.`
+            : walkId !== null
+              ? `Asking about the ${ASK_BOOK_LIMIT} books seen last.`
+              : `Asking about the first ${ASK_BOOK_LIMIT} books.`}
+        </p>
+      )}
       {(asked || answer || asking || error) && (
         <div
           ref={scroller}

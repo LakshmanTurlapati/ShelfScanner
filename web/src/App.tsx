@@ -19,6 +19,7 @@ import { loadProfile, type Profile } from "./profile";
 import { ProfileGate } from "./ProfileGate";
 import { SPLASH_MS, Splash } from "./Splash";
 import { StillCallouts } from "./StillCallouts";
+import { activeWalk, endWalk } from "./walk";
 
 // Edge-to-edge WebViews draw under the system bars, so dialogs keep clear of both.
 const DIALOG_INSETS = {
@@ -205,7 +206,7 @@ export function App() {
 
       {session && (
         <>
-          <ShelfChat key={session.id} books={books} />
+          <ShelfChat key={session.id} books={books} walkId={session.mode === "walk" ? session.id : null} />
           {shelf.progress && <p className="mb-3 text-sm text-[#6a584d]">{shelf.progress}</p>}
           <div className="mb-3">
             <Capture notice={notice} compact onFiles={onFiles} />
@@ -292,6 +293,19 @@ export function App() {
                 </li>
               ))}
             </ul>
+            {activeWalk() && (
+              <button
+                className="mt-4 self-start text-sm underline"
+                type="button"
+                onClick={() => {
+                  endWalk();
+                  setDrawer(false);
+                  setLive(true);
+                }}
+              >
+                New walk
+              </button>
+            )}
             <button
               className="mt-4 self-start text-sm underline"
               type="button"
@@ -311,7 +325,8 @@ export function App() {
         </aside>
       )}
 
-      {live && <CameraScan onClose={() => setLive(false)} paused={splash || dataNotice || !noticeAccepted() || !profileReady || profileGate} profile={profile} />}
+      {/* Mounted for the whole app run, so a walk's tracking and the places it remembers survive opening the Shelf. */}
+      <CameraScan hidden={!live} onClose={() => setLive(false)} paused={!live || splash || dataNotice || !noticeAccepted() || !profileReady || profileGate} profile={profile} />
 
       {splash && <Splash />}
 

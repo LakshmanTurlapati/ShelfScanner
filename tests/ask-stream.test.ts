@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Book } from "../shared/types.ts";
-import { ASK_BOOK_LIMIT, askBooks, askShelf, OfflineError, readStrip } from "../web/src/api.ts";
+import { ASK_BOOK_LIMIT, askBooks, askShelf, OfflineError, pickAskBooks, readStrip } from "../web/src/api.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -67,6 +67,20 @@ describe("ask the shelf", () => {
       summary: "A short summary of the book that a model wrote for the card.",
       avgRating: 4.1,
     });
+  });
+
+  it("asks a long walk about the books nearest you, and the newest without a position", () => {
+    const walk = Array.from({ length: 300 }, (_, i) => book(`book-${i}`, { pin: { x: i * 0.1, row: 1, section: i < 250 ? 1 : 2 } }));
+    const near = pickAskBooks(walk, { walk: true, position: { section: 1, x: 20 } });
+    expect(near).toHaveLength(ASK_BOOK_LIMIT);
+    expect(near.map((item) => item.key)).toContain("book-200");
+    expect(near.map((item) => item.key)).not.toContain("book-260");
+    expect(Math.min(...near.map((item) => Math.abs(item.pin!.x - 20)))).toBeLessThan(0.2);
+    // Kept in walk order, so the model reads them along the shelf.
+    expect(near.map((item) => item.key)).toEqual([...near].sort((a, b) => a.pin!.x - b.pin!.x).map((item) => item.key));
+    expect(pickAskBooks(walk, { walk: true, position: null }).at(0)?.key).toBe("book-100");
+    expect(pickAskBooks(walk, { walk: false, position: { section: 1, x: 20 } }).at(0)?.key).toBe("book-0");
+    expect(pickAskBooks(walk.slice(0, 10), { walk: true, position: { section: 1, x: 20 } })).toHaveLength(10);
   });
 
   it("keeps the fields the deployed server's shelfRecords reads", async () => {

@@ -5,7 +5,7 @@
 <img src="web/public/logo.svg" alt="Shelf Scanner mark" width="160" />
 
 ![Shelf Scanner](https://img.shields.io/badge/Shelf_Scanner-point_at_a_shelf-141110?style=for-the-badge)
-![Version](https://img.shields.io/badge/version-0.14.2-ff6b35?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.15.0-ff6b35?style=for-the-badge)
 ![Android](https://img.shields.io/badge/Android-Capacitor-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 
 ![Stars](https://img.shields.io/github/stars/LakshmanTurlapati/ShelfScanner?style=flat-square&logo=github&label=Stars)
@@ -31,7 +31,9 @@ The Android app is that same web app inside a Capacitor WebView. Reading and loo
 
 - **Live spine labels.** The camera tracks the shelf and keeps each title on its spine.
 - **Goodreads ratings.** When Goodreads has a rating, the read shows it with the book.
-- **Walk the shelf.** One session keeps the books in walk order. The cover grid uses that same order.
+- **Walk the shelf.** One session keeps the books in walk order, and the cover grid uses that order. Labels from earlier reads stay on their spines as you walk on, and new shelf coming into view is read without stopping.
+- **Walk back.** Come back to a part of the shelf you already read and its labels return without reading it again. A read made after tracking was lost is placed by the titles it shares with earlier reads, so walking back does not scramble the order.
+- **New shelf.** In a big library, New shelf starts the next section. The cover grid shows a heading per shelf, and Ask the shelf uses the 200 books nearest you.
 - **For you.** A saved genre, or the title you preferred in the quiz, highlights the matching live label and the matching cover.
 - **Ask the shelf.** A question about the current session streams back as a short Markdown list: title, author, rating, and one line on why.
 
@@ -88,7 +90,7 @@ These frames are from an Android 15 emulator. The live view is the emulator came
 
 ## Android app
 
-The package is `app.shelfscanner.phone`, version 0.14.2 (versionCode 3). The label is Shelf Scanner.
+The package is `app.shelfscanner.phone`, version 0.15.0 (versionCode 4). The label is Shelf Scanner.
 
 A debug APK is enough to sideload. You need Node 24, the Android SDK, and a device or emulator with USB debugging:
 
@@ -117,7 +119,7 @@ npm run store:assets -- --frame ~/Desktop/live.png "Point at a shelf. Titles sta
 
 | Piece | What it does |
 |-------|----------------|
-| Camera and tracker | The web app watches the shelf and places labels from the homography. |
+| Camera and tracker | The web app watches the shelf and places labels from the homography. Each read's keyframe is linked to the read it was tracked from, so labels from every linked read can be drawn. Keyframes stay in the tracking worker's memory (up to 40, about 16 MB) while the app is open, and a view is matched against them to find an earlier read again. They are never uploaded or stored. |
 | Reads | `POST /api/read-strip` sends a JPEG. The server asks a model for the spines, then looks up Goodreads. |
 | Covers | The server tries an ISBN, then a title and author, on Open Library and then Google Books. It caches the id or an https image address. It does not proxy the image bytes. A miss, a slow lookup, a failed image, or Open Library's one pixel stand in falls back to the shelf mark. |
 | Ask the shelf | `POST /api/ask` streams Markdown. The page renders finished lines as a chat bubble and keeps a half written line as text until it closes. |
@@ -160,6 +162,8 @@ npm run android:release
 npm run lint
 npm test
 npm run test:e2e
+npm run eval:track      # tracking bench on rendered shelf photos
+npm run eval:relocate   # finding earlier reads again; fails on any wrong pose
 ```
 
 Android lint and a debug build:

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAutoRead, type AutoReadGate } from "../web/src/overlay/auto-read.ts";
+import { COVERED, createAutoRead, MOVING_SHARPNESS, sharpMoment, type AutoReadGate } from "../web/src/overlay/auto-read.ts";
 import { createSteadyDetector, sharpness, texture } from "../web/src/overlay/steady.ts";
 import type { GrayFrame } from "../web/src/overlay/track.ts";
 
@@ -97,16 +97,38 @@ describe("steady camera", () => {
 });
 
 describe("auto-read", () => {
-  const ready: AutoReadGate = { enabled: true, steady: true, reading: false, visible: true, covered: false, sheetOpen: false, now: 10_000 };
+  const ready: AutoReadGate = { enabled: true, steady: true, sharp: false, reading: false, visible: true, coverage: 0, awaitingRelocation: false, sheetOpen: false, now: 10_000 };
   const view = shelf();
   const elsewhere = shelf(30);
 
   it("reads a steady view only when nothing else is in the way", () => {
     const auto = createAutoRead();
     expect(auto.due(ready, view)).toBe(true);
-    for (const blocked of [{ enabled: false }, { steady: false }, { reading: true }, { visible: false }, { covered: true }, { sheetOpen: true }]) {
+    for (const blocked of [{ enabled: false }, { steady: false }, { reading: true }, { visible: false }, { coverage: COVERED }, { awaitingRelocation: true }, { sheetOpen: true }]) {
       expect(auto.due({ ...ready, ...blocked }, view)).toBe(false);
     }
+  });
+
+  it("reads a sharp moment while moving when new shelf is in view", () => {
+    const auto = createAutoRead();
+    const moving = { ...ready, steady: false, sharp: true };
+    expect(auto.due(moving, view)).toBe(true);
+    expect(auto.due({ ...moving, coverage: 0.4 }, view)).toBe(true);
+    // Most of the view already labelled, a sheet open, or an earlier read possibly in view: no read.
+    expect(auto.due({ ...moving, coverage: 0.8 }, view)).toBe(false);
+    expect(auto.due({ ...moving, sheetOpen: true }, view)).toBe(false);
+    expect(auto.due({ ...moving, awaitingRelocation: true }, view)).toBe(false);
+    auto.started(10_000, view);
+    auto.finished(true, true, 10_500);
+    expect(auto.due({ ...moving, now: 12_000 }, elsewhere)).toBe(false);
+    expect(auto.due({ ...moving, now: 13_000 }, elsewhere)).toBe(true);
+  });
+
+  it("calls a moment sharp only when it is nearly the sharpest of the last few", () => {
+    expect(sharpMoment(0.6, [0.55, 0.62])).toBe(true);
+    expect(sharpMoment(0.4, [0.6, 0.65])).toBe(false);
+    expect(sharpMoment(MOVING_SHARPNESS - 0.01, [])).toBe(false);
+    expect(sharpMoment(MOVING_SHARPNESS, [])).toBe(true);
   });
 
   it("waits three seconds between reads", () => {
