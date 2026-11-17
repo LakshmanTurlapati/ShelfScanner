@@ -132,7 +132,7 @@ export function composeHomography(a: Mat3, b: Mat3): Mat3 {
   return out as Mat3;
 }
 
-function normalize(h: Mat3): Mat3 {
+export function normalize(h: Mat3): Mat3 {
   return Math.abs(h[8]) < 1e-12 ? h : (h.map((value) => value / h[8]) as Mat3);
 }
 
@@ -332,11 +332,11 @@ function score(h: Mat3, src: [number, number][], dst: [number, number][], thresh
 
 type Solver = (src: [number, number][], dst: [number, number][]) => Mat3 | null;
 
-function ransac(src: [number, number][], dst: [number, number][], size: number, solve: Solver, threshold: number) {
+function ransac(src: [number, number][], dst: [number, number][], size: number, solve: Solver, threshold: number, trials = RANSAC_TRIALS) {
   let seed = src.length * 7919 + 17;
   const random = () => (seed = (Math.imul(1664525, seed) + 1013904223) >>> 0) / 4294967296;
   let best: Fit | null = null;
-  let needed = RANSAC_TRIALS;
+  let needed = trials;
   for (let trial = 0; trial < needed; trial++) {
     const picked: number[] = [];
     while (picked.length < size) {
@@ -350,7 +350,7 @@ function ransac(src: [number, number][], dst: [number, number][], size: number, 
       best = fit;
       const all = (fit.inliers / src.length) ** size;
       const wanted = all >= 1 ? 0 : Math.ceil(Math.log(0.01) / Math.log(1 - all));
-      needed = Math.min(RANSAC_TRIALS, Math.max(RANSAC_MIN_TRIALS, wanted));
+      needed = Math.min(trials, Math.max(RANSAC_MIN_TRIALS, wanted));
     }
   }
   return best;
@@ -378,6 +378,16 @@ export function fitHomography(src: [number, number][], dst: [number, number][], 
   const fit = full && refine(full, src, dst, refitHomography, threshold);
   if (fit && fit.inliers >= SIMILARITY_BELOW) return fit;
   const simple = ransac(src, dst, 2, solveSimilarity, threshold);
+  return simple && refine(simple, src, dst, solveSimilarity, threshold);
+}
+
+/**
+ * Shift, turn and zoom by RANSAC over pairs. Two points fix a sample, so far fewer trials find a
+ * clean one among many wrong matches than a four-point homography needs.
+ */
+export function fitSimilarity(src: [number, number][], dst: [number, number][], threshold = INLIER_PX, trials = RANSAC_TRIALS): Fit | null {
+  if (src.length < 2 || src.length !== dst.length) return null;
+  const simple = ransac(src, dst, 2, solveSimilarity, threshold, trials);
   return simple && refine(simple, src, dst, solveSimilarity, threshold);
 }
 
@@ -664,8 +674,8 @@ function cellCorners(gray: Float32Array, w: number, h: number, cell: number, str
   return corners.sort((a, b) => b.score - a.score);
 }
 
-export function strongCorners(gray: Float32Array, w: number, h: number, limit = KEY_CORNERS) {
-  return cellCorners(gray, w, h, CELL, 1).slice(0, limit).map(({ x, y }) => ({ x, y }));
+export function strongCorners(gray: Float32Array, w: number, h: number, limit = KEY_CORNERS, cell = CELL, stride = 1) {
+  return cellCorners(gray, w, h, cell, stride).slice(0, limit).map(({ x, y }) => ({ x, y }));
 }
 
 // Normalised correlation of the patches centred on pixels a and b.
@@ -742,7 +752,7 @@ function shape(h: Mat3, x: number, y: number) {
 
 // Hand motion between two frames looks locally like a shift, turn and zoom; a step that stretches
 // one direction more than the other is a false match, however well its points agree.
-function plausible(h: Mat3, width: number, height: number) {
+export function plausible(h: Mat3, width: number, height: number) {
   const local = shape(h, width / 2, height / 2);
   return local.w > 0 && local.det > 0 && local.scale >= MIN_SCALE && local.scale <= MAX_SCALE &&
     Math.abs(local.rotation) <= MAX_ROTATION && local.stretch <= MAX_STRETCH;
@@ -890,6 +900,20 @@ type Repeats = { distinct: number; periods: number[] };
 
 // Too few points that repeat nowhere near to tell a pose from one a repeat away.
 const unvouched = ({ distinct, periods }: Repeats) => periods.length >= DISTINCT_MIN && distinct < Math.max(DISTINCT_MIN, periods.length / 4);
+
+/**
+ * Most of the keyframe's own corners repeat nearby along their row or column (a run of identical
+ * spines), so a pose a repeat away would fit as well as the true one.
+ */
+export function repetitive(state: TrackState) {
+  const repeats: Repeats = { distinct: 0, periods: [] };
+  for (let i = 0; i < state.corners; i++) {
+    const alike = state.points[i].alike;
+    if (alike === Infinity) repeats.distinct++;
+    else if (alike) repeats.periods.push(alike);
+  }
+  return unvouched(repeats);
+}
 
 // The step or pose rests on the look-alikes. `distinct` and `alike` are [tried, fit].
 const outvoted = (distinct: [number, number], alike: [number, number]) =>

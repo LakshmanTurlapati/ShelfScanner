@@ -115,3 +115,12 @@ export function coverPoint(nx: number, ny: number, containerW: number, container
   const height = frameH * scale;
   return { x: (containerW - width) / 2 + nx * width, y: (containerH - height) / 2 + ny * height };
 }
+
+/** The part of the frame (0..1 on each axis) that a cover-fitted view of it shows. */
+export function visibleBounds(containerW: number, containerH: number, frameW: number, frameH: number) {
+  if (!(containerW > 0 && containerH > 0 && frameW > 0 && frameH > 0)) return { x0: 0, y0: 0, x1: 1, y1: 1 };
+  const scale = Math.max(containerW / frameW, containerH / frameH);
+  const left = (frameW * scale - containerW) / 2 / (frameW * scale);
+  const top = (frameH * scale - containerH) / 2 / (frameH * scale);
+  return { x0: clamp(left), y0: clamp(top), x1: clamp(1 - left), y1: clamp(1 - top) };
+}
