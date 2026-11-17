@@ -402,32 +402,33 @@ test("a steady view that gave no labels is read again", async ({ page }) => {
   expect(reads).toBe(2);
 });
 
-test("a moving camera is not read until it holds still", async ({ page }) => {
+test("a moving camera reads new shelf without holding still", async ({ page }) => {
   await fakeCamera(page, { autoRead: true, moving: true });
   const reads = await hobbitShelf(page);
   await page.goto("/");
   await dismissProfile(page);
   await cameraPlaying(page);
-  await page.waitForTimeout(3000);
-  expect(reads).toHaveLength(0);
+  await expect.poll(() => reads.length, { timeout: 5000 }).toBeGreaterThan(0);
   await page.evaluate(() => { (window as FakeCameraWindow).movingCamera = false; });
   await expect(page.getByRole("button", { name: "Details for The Hobbit" })).toBeVisible();
 });
 
 test("turning Auto off stops automatic reads and is remembered", async ({ page }) => {
   await fakeCamera(page, { autoRead: true, moving: true });
+  // A blank view until Auto is off: a moving shelf would now be read straight away.
+  await page.addInitScript(() => { (window as FakeCameraWindow).blankCamera = true; });
   const reads = await hobbitShelf(page);
   await page.goto("/");
   await dismissProfile(page);
   await cameraPlaying(page);
   await page.getByRole("button", { name: "Auto-read on" }).click();
   await expect(page.getByRole("button", { name: "Auto-read off" })).toHaveAttribute("aria-pressed", "false");
-  await page.evaluate(() => { (window as FakeCameraWindow).movingCamera = false; });
+  await page.evaluate(() => { Object.assign(window as FakeCameraWindow, { blankCamera: false, movingCamera: false }); });
   await page.waitForTimeout(3000);
   expect(reads).toHaveLength(0);
   await page.reload();
   await cameraPlaying(page);
-  await page.evaluate(() => { (window as FakeCameraWindow).movingCamera = false; });
+  await page.evaluate(() => { Object.assign(window as FakeCameraWindow, { blankCamera: false, movingCamera: false }); });
   await page.waitForTimeout(2000);
   expect(reads).toHaveLength(0);
   await page.getByRole("button", { name: "Auto-read off" }).click();
@@ -540,4 +541,104 @@ test("an answer can be reported from inside the app", async ({ page }) => {
   await page.getByRole("button", { name: "Offensive" }).click();
   await expect(page.getByRole("status").filter({ hasText: "This answer was reported for review." })).toBeVisible();
   expect(reported).toEqual({ reason: "offensive", question: "Which one?", answer: "- **The Hobbit** by J.R.R. Tolkien, 4.3. A short quest.\n" });
+});
+
+// A walk where each read sees one spine: `titles` is what the next read returns, in order.
+async function walkShelf(page: Page, titles: string[]) {
+  const state = { reads: 0, next: 0 };
+  await page.route("**/api/read-strip**", (route) => {
+    const strip = new URL(route.request().url()).searchParams.get("strip");
+    if (strip !== "1") return route.fulfill({ json: { spines: [] } });
+    state.reads += 1;
+    const title = titles[Math.min(state.next++, titles.length - 1)];
+    return route.fulfill({ json: { spines: [spine(title, 1, title === "Dune" ? 0.32 : 0.5)] } });
+  });
+  // Lookups fail, so every book keeps the title it was read as.
+  await page.route("**/api/enrich", (route) => route.fulfill({ status: 502, body: "lookup failed" }));
+  await page.route("**/api/embed", (route) => route.fulfill({ json: { items: [] } }));
+  await noQuickFacts(page);
+  return state;
+}
+
+async function walkSessions(page: Page) {
+  return page.evaluate(async () => {
+    const modulePath = "/src/store.ts";
+    const { useShelf } = await import(modulePath);
+    return useShelf.getState().sessions.map((session: { id: string; photoCount: number; mode?: string; books: Array<{ canonicalTitle: string | null; pin?: { section?: number } }> }) => ({
+      photoCount: session.photoCount,
+      mode: session.mode,
+      books: session.books.map((book) => ({ title: book.canonicalTitle, section: book.pin?.section ?? null })),
+    }));
+  });
+}
+
+test("an earlier read's labels stay on their spines after the next read", async ({ page }) => {
+  await fakeCamera(page);
+  await walkShelf(page, ["The Hobbit", "Dune"]);
+  await page.goto("/");
+  await dismissProfile(page);
+  await cameraPlaying(page);
+  await page.getByRole("button", { name: "Read shelf" }).click();
+  await expect(page.getByRole("button", { name: "Details for The Hobbit" })).toBeVisible();
+  await page.getByRole("button", { name: "Read again" }).click();
+  await expect(page.getByRole("button", { name: "Details for Dune" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Details for The Hobbit" })).toBeVisible();
+});
+
+test("coming back to a shelf already read brings its labels back without reading it again", async ({ page }) => {
+  await fakeCamera(page);
+  const state = await walkShelf(page, ["The Hobbit"]);
+  await page.goto("/");
+  await dismissProfile(page);
+  await cameraPlaying(page);
+  await page.getByRole("button", { name: "Read shelf" }).click();
+  const label = page.getByRole("button", { name: "Details for The Hobbit" });
+  await expect(label).toBeVisible();
+  await expect(page.getByRole("button", { name: "Read again" })).toBeEnabled();
+  const reads = state.reads;
+  await page.evaluate(() => { (window as FakeCameraWindow).blankCamera = true; });
+  await expect(page.getByText("Tracking lost. Read the shelf again.")).toBeVisible();
+  await expect(label).toHaveCount(0);
+  await page.evaluate(() => { (window as FakeCameraWindow).blankCamera = false; });
+  await expect(label).toBeVisible({ timeout: 5000 });
+  expect(state.reads).toBe(reads);
+});
+
+test("opening the Shelf partway keeps the walk going", async ({ page }) => {
+  await fakeCamera(page);
+  await walkShelf(page, ["The Hobbit", "Dune"]);
+  await page.goto("/");
+  await dismissProfile(page);
+  await cameraPlaying(page);
+  await page.getByRole("button", { name: "Read shelf" }).click();
+  await expect(page.getByRole("button", { name: "Details for The Hobbit" })).toBeVisible();
+  await page.getByRole("button", { name: "Open Shelf" }).click();
+  await expect(page.getByRole("button", { name: /Cover of The Hobbit/ })).toBeVisible();
+  await page.getByRole("button", { name: "Back to Live View" }).click();
+  await cameraPlaying(page);
+  await page.getByRole("button", { name: "Read again" }).click();
+  await expect(page.getByRole("button", { name: "Details for Dune" })).toBeVisible();
+  const sessions = await walkSessions(page);
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0]).toMatchObject({ mode: "walk", photoCount: 2 });
+});
+
+test("New shelf starts the next section and the grid heads each shelf", async ({ page }) => {
+  await fakeCamera(page);
+  await walkShelf(page, ["The Hobbit", "Dune"]);
+  await page.goto("/");
+  await dismissProfile(page);
+  await cameraPlaying(page);
+  await page.getByRole("button", { name: "Read shelf" }).click();
+  await expect(page.getByRole("button", { name: "Details for The Hobbit" })).toBeVisible();
+  await expect(page.getByText("Shelf 1", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "New shelf" }).click();
+  await expect(page.getByText("Shelf 2", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Read again" }).click();
+  await expect(page.getByRole("button", { name: "Details for Dune" })).toBeVisible();
+  const books = (await walkSessions(page))[0]!.books;
+  expect(books).toEqual(expect.arrayContaining([{ title: "The Hobbit", section: 1 }, { title: "Dune", section: 2 }]));
+  await page.getByRole("button", { name: "Open Shelf" }).click();
+  await expect(page.getByRole("heading", { name: "Shelf 1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Shelf 2" })).toBeVisible();
 });

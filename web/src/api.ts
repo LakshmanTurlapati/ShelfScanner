@@ -218,8 +218,39 @@ async function streamNatively(url: string, body: string, onText: (chunk: string)
 // 1,536-number embedding and passed the 256 KB body limit at about a dozen books.
 export const ASK_BOOK_LIMIT = 200;
 
-export function askBooks(books: readonly Book[]) {
-  return books.slice(0, ASK_BOOK_LIMIT).map((book) => ({
+/** Where the walk is: the shelf section and the x of the view's centre, in frame widths. */
+export type AskPosition = { section: number; x: number };
+export type AskScope = { walk: boolean; position: AskPosition | null };
+
+function finiteX(book: Book) {
+  return book.pin && Number.isFinite(book.pin.x) && Number.isFinite(book.pin.row) ? book.pin.x : null;
+}
+
+/**
+ * A long walk can hold more books than Ask can send. A walk sends the ones nearest where you are
+ * (the same shelf first, then by distance along it); without a position it sends the newest.
+ * A photo's books keep their order.
+ */
+export function pickAskBooks(books: readonly Book[], scope: AskScope = { walk: false, position: null }): readonly Book[] {
+  if (books.length <= ASK_BOOK_LIMIT || !scope.walk) return books.slice(0, ASK_BOOK_LIMIT);
+  const position = scope.position;
+  if (!position) return books.slice(-ASK_BOOK_LIMIT);
+  const rank = (book: Book) => {
+    const x = finiteX(book);
+    if (x === null) return 3e9;
+    const same = (book.pin?.section ?? 1) === position.section;
+    return (same ? 0 : 1e9) + Math.abs(x - position.x);
+  };
+  return books
+    .map((book, index) => ({ book, index, rank: rank(book) }))
+    .sort((a, b) => a.rank - b.rank || b.index - a.index)
+    .slice(0, ASK_BOOK_LIMIT)
+    .sort((a, b) => a.index - b.index)
+    .map((item) => item.book);
+}
+
+export function askBooks(books: readonly Book[], scope?: AskScope) {
+  return pickAskBooks(books, scope).map((book) => ({
     canonicalTitle: book.canonicalTitle ?? null,
     detections: book.detections[0]?.title ? [{ title: book.detections[0].title }] : [],
     authors: book.authors,
@@ -230,9 +261,9 @@ export function askBooks(books: readonly Book[]) {
   }));
 }
 
-export async function askShelf(question: string, books: readonly Book[], onText: (chunk: string) => void, signal?: AbortSignal) {
+export async function askShelf(question: string, books: readonly Book[], onText: (chunk: string) => void, signal?: AbortSignal, scope?: AskScope) {
   await ensureOnline();
-  const body = JSON.stringify({ question, books: askBooks(books) });
+  const body = JSON.stringify({ question, books: askBooks(books, scope) });
   const url = apiUrl("/api/ask");
   if (isNativeApp()) {
     await streamNatively(url, body, onText, signal);

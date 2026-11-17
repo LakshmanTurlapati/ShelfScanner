@@ -465,6 +465,24 @@ describe("canonical place", () => {
     expect(merged[0]?.coverId).toBeNull();
   });
 
+  it("keeps a pin's shelf and read through a canonical merge, store merges and patches", () => {
+    const pin = { x: 10, row: 1, section: 2, frame: "read-1" };
+    const merged = mergeCanonical([
+      book({ key: "a", canonicalTitle: "Dune", authors: ["Herbert"] }),
+      book({ key: "b", canonicalTitle: "Dune", authors: ["Herbert"], pin }),
+    ]);
+    expect(merged[0]?.pin).toEqual(pin);
+    const id = useShelf.getState().beginSession(1, "pin-fields", "walk");
+    useShelf.getState().setBooksFor(id, [book({ key: "dune", pin: { ...pin, frame: undefined } as Book["pin"] })]);
+    let stored = useShelf.getState().sessions.find((session) => session.id === id)!.books[0]!;
+    expect(stored.pin).toEqual({ x: 10, row: 1, section: 2 });
+    expect(Object.keys(stored.pin!)).not.toContain("frame");
+    useShelf.getState().mergeBooksFor(id, [book({ key: "dune", pin: { x: 99, row: 3 } })]);
+    useShelf.getState().patchBookFor(id, "dune", { avgRating: 4.2 });
+    stored = useShelf.getState().sessions.find((session) => session.id === id)!.books[0]!;
+    expect(stored.pin).toEqual({ x: 10, row: 1, section: 2 });
+  });
+
   it("does not create a coverId key when neither record has one", () => {
     const merged = mergeCanonical([
       book({ key: "a", canonicalTitle: "Dune", authors: ["Herbert"] }),

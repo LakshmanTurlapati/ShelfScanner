@@ -9,6 +9,7 @@ import { bookKey, mergeCanonical, mergeOverlaps } from "./pipeline/dedup";
 import { withScores } from "./pipeline/score";
 import { stripsFromCanvas, toStrips, type PhotoStrip } from "./pipeline/tiling";
 import { renamedKeys, useShelf } from "./store";
+import { anchorByTitles, framePlace, placeFrame, walkSection } from "./walk";
 
 export type ScanTiming = "strips-encoded" | "first-label" | "all-labels" | "first-rating" | "all-ratings";
 export type ScanOptions = {
@@ -120,6 +121,14 @@ function sessionBooks(captureId: string) {
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+// A walk read that shares titles with reads already placed takes its place from them, so walking
+// back is recorded where that shelf is rather than one frame further on.
+function placeByTitles(sessionId: string, frameId: string, books: Book[]) {
+  const section = framePlace(frameId)?.section ?? walkSection();
+  const anchored = anchorByTitles(sessionBooks(sessionId), books, frameId, section);
+  if (anchored) placeFrame(frameId, { ...anchored, section }, "titles");
+}
+
 function stopwatch(startedAt: number, onTiming: ScanOptions["onTiming"]) {
   const seen = new Set<ScanTiming>();
   return (name: ScanTiming) => {
@@ -138,6 +147,7 @@ async function readSession(
   retain = false,
 ): Promise<ScanResult> {
   const store = useShelf.getState();
+  const walkRead = frameId !== captureId && store.sessions.some((session) => session.id === captureId && session.mode === "walk");
   const rows = photos.map((strips) => strips.map((): Detection[] => []));
   const total = photos.reduce((sum, strips) => sum + strips.length, 0);
   const limit = pLimit(LOOKUP_CONCURRENCY);
@@ -226,6 +236,7 @@ async function readSession(
       if (started.has(from)) started.add(to);
       if (verified.has(from)) verified.add(to);
     }
+    if (walkRead) placeByTitles(captureId, frameId, books);
     store.mergeBooksFor(captureId, books);
     if (books.some((book) => book.detections.some(labelable))) tick("first-label");
     lookUp(books);
