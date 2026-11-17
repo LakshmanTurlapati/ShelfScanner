@@ -37,8 +37,8 @@ describe("android shell", () => {
     expect(manifest).toContain('android:dataExtractionRules="@xml/data_extraction_rules"');
     expect(manifest).toContain('android:usesCleartextTraffic="false"');
     expect(read("../android/app/src/main/res/values/strings.xml")).toContain("Shelf Scanner");
-    expect(read("../android/app/build.gradle")).toContain('versionName "0.14.2"');
-    expect(read("../android/app/build.gradle")).toContain("versionCode 3");
+    expect(read("../android/app/build.gradle")).toContain('versionName "0.15.0"');
+    expect(read("../android/app/build.gradle")).toContain("versionCode 4");
     expect(read("../android/app/build.gradle")).toContain("minifyEnabled true");
     expect(read("../android/app/build.gradle")).toContain("SHELF_KEYSTORE");
   });
