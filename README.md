@@ -101,7 +101,7 @@ The live camera is `getUserMedia` inside the WebView. Packaged API calls go to t
 
 APK and AAB files are build outputs. They are not committed.
 
-The privacy policy is [`PRIVACY.md`](PRIVACY.md). Its GitHub address on `main`, <https://github.com/LakshmanTurlapati/ShelfScanner/blob/main/PRIVACY.md>, is the one for the Play Console, and the app links to it from the camera notice and the Sessions panel. Keep it in step with what the app sends. If that changes, also update the notice in `web/src/DataNotice.tsx` and bump `DATA_NOTICE_VERSION` in `web/src/legal.ts`, so everyone sees it again.
+The privacy policy is [`PRIVACY.md`](PRIVACY.md). Its GitHub address on `main`, <https://github.com/LakshmanTurlapati/ShelfScanner/blob/main/PRIVACY.md>, is the one for the Play Console, and the app links to it from the camera notice and the Sessions panel. Keep it in step with what the app sends. If that changes, also update the notice in `web/src/DataNotice.tsx` and bump `DATA_NOTICE_VERSION` in `web/src/legal.ts`, so everyone sees it again. The matching Play Console answers (Data safety, app access, audience) are in [`docs/play-data-safety.md`](docs/play-data-safety.md).
 
 Before the camera first opens, the app shows a one-time notice that pictures go to the server and to third-party AI models, and that some frames are kept. Ask the shelf answers carry a Report this answer control. Reports land on the server, and `npm run reports:pull` prints them.
 
