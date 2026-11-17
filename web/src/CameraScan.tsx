@@ -346,7 +346,8 @@ export function CameraScan({ onClose, paused = false, hidden = false, profile = 
       setLost(false);
       setNotice((current) => (current === "Not enough detail here to track labels." ? "" : current));
       setProjection({ nodeId: reply.captureId, h: reply.homography, width: reply.width, height: reply.height });
-      enter(node.section);
+      // After New shelf the old shelf's labels can come back, but the next read still starts the new one.
+      if (!freshShelf.current) enter(node.section);
     };
 
     worker.onmessage = (event: MessageEvent<WorkerReply>) => {
@@ -514,17 +515,22 @@ export function CameraScan({ onClose, paused = false, hidden = false, profile = 
   // The camera waits for the splash and the profile quiz, so the permission prompt comes with the
   // live view behind it rather than over an unrelated screen. It also stops while the Shelf is open.
   useEffect(() => {
-    if (paused) stopCamera.current();
-    else restartCamera.current();
+    if (paused) {
+      stopCamera.current();
+      // Labels wait for a tracked step on the restarted camera rather than showing over a blank view.
+      staleShown.current = true;
+      setStale(true);
+    } else restartCamera.current();
   }, [paused]);
 
+  // A sheet left open behind the Shelf keeps its state for coming back, but not the back button.
   useEffect(() => {
-    if (!selectedBook && !showReview) return;
+    if (hidden || (!selectedBook && !showReview)) return;
     return onBack(() => {
       setSelected(null);
       setShowReview(false);
     });
-  }, [selectedBook, showReview]);
+  }, [hidden, selectedBook, showReview]);
 
   useEffect(() => {
     const video = videoRef.current;

@@ -104,18 +104,31 @@ type Root = Place & { source: PlaceSource };
 const RANK: Record<PlaceSource, number> = { guess: 0, titles: 1, fixed: 2 };
 const roots = new Map<string, Root>();
 const frames = new Map<string, { root: string; offset: number }>();
-const moved = new Set<(frameIds: string[]) => void>();
+type FramesMoved = (frameIds: string[], before: ReadonlyMap<string, Place>) => void;
+const moved = new Set<FramesMoved>();
 
 const memberOf = (frameId: string) => frames.get(frameId) ?? { root: frameId, offset: 0 };
 const framesOf = (root: string) => [...frames].filter(([, member]) => member.root === root).map(([id]) => id);
 
-function announce(frameIds: string[]) {
-  if (!frameIds.length) return;
-  for (const callback of [...moved]) callback(frameIds);
+function placesOf(frameIds: readonly string[]) {
+  const out = new Map<string, Place>();
+  for (const id of frameIds) {
+    const place = framePlace(id);
+    if (place) out.set(id, { x: place.x, rowOffset: place.rowOffset, section: place.section });
+  }
+  return out;
 }
 
-/** Called with the reads whose place changed, so their pins can follow. */
-export function onFramesMoved(callback: (frameIds: string[]) => void) {
+function announce(frameIds: string[], before: ReadonlyMap<string, Place>) {
+  if (!frameIds.length) return;
+  for (const callback of [...moved]) callback(frameIds, before);
+}
+
+/**
+ * Called with the reads whose place changed and where they were before, so their pins can move by
+ * the same amount (a book a later read saw again no longer has this read's detection to re-pin from).
+ */
+export function onFramesMoved(callback: FramesMoved) {
   moved.add(callback);
   return () => {
     moved.delete(callback);
@@ -137,8 +150,10 @@ export function placeFrame(frameId: string, place: Place, source: PlaceSource) {
   if (old && RANK[old.source] > RANK[source]) return false;
   const next: Root = { x: place.x - member.offset, rowOffset: place.rowOffset, section: place.section, source };
   if (old && old.source === source && Math.abs(old.x - next.x) < 1e-6 && old.rowOffset === next.rowOffset && old.section === next.section) return false;
+  const group = framesOf(member.root);
+  const before = placesOf(group);
   roots.set(member.root, next);
-  announce(framesOf(member.root));
+  announce(group, before);
   return true;
 }
 
@@ -163,12 +178,13 @@ export function joinFrames(frameId: string, intoFrameId: string, offset: number)
   const fromRoot = roots.get(from.root);
   const intoRoot = roots.get(into.root);
   const joining = framesOf(from.root);
+  const before = placesOf([...joining, ...framesOf(into.root)]);
   for (const id of joining) frames.set(id, { root: into.root, offset: frames.get(id)!.offset + delta });
   roots.delete(from.root);
   if (fromRoot && (!intoRoot || RANK[fromRoot.source] > RANK[intoRoot.source])) {
     roots.set(into.root, { ...fromRoot, x: fromRoot.x - delta });
-    announce(framesOf(into.root));
-  } else announce(joining);
+    announce(framesOf(into.root), before);
+  } else announce(joining, before);
   return true;
 }
 
@@ -211,7 +227,8 @@ function median(values: number[]) {
 /**
  * Places a read from the books it shares with reads already placed in the same section: each
  * shared title says where this frame starts. Needs two that agree, since one lookup can be wrong;
- * a title read twice on either side says nothing about which copy is which.
+ * a title read twice on either side says nothing about which copy is which. Reads already linked
+ * into this read's group are left out: they only repeat the group's own place, guessed or not.
  */
 export function anchorByTitles(stored: readonly Book[], incoming: readonly Book[], frameId: string, section: number) {
   const readings = incoming.flatMap((book) => {
@@ -220,7 +237,9 @@ export function anchorByTitles(stored: readonly Book[], incoming: readonly Book[
   });
   const copies = new Map<string, number>();
   for (const reading of readings) copies.set(norm(reading.title), (copies.get(norm(reading.title)) ?? 0) + 1);
-  const placed = stored.filter((book) => finitePin(book.pin) && pinSection(book.pin) === section && book.pin.frame !== frameId);
+  const group = memberOf(frameId).root;
+  const placed = stored.filter((book) =>
+    finitePin(book.pin) && pinSection(book.pin) === section && (!book.pin.frame || memberOf(book.pin.frame).root !== group));
   const offsets: { x: number; row: number }[] = [];
   for (const reading of readings) {
     if ((copies.get(norm(reading.title)) ?? 0) > 1) continue;

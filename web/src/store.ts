@@ -2,7 +2,7 @@ import { get, set } from "idb-keyval";
 import { create } from "zustand";
 import type { Book, Session } from "../../shared/types.ts";
 import { clonePin, finitePin } from "./pin.ts";
-import { currentWalk, endWalk, onFramesMoved, pinFor } from "./walk.ts";
+import { currentWalk, endWalk, framePlace, onFramesMoved, pinFor, type Place } from "./walk.ts";
 
 const STORE_KEY = "shelf-scanner-sessions";
 
@@ -23,7 +23,7 @@ type State = {
   mergeBooksFor: (id: string, books: Book[]) => void;
   addFrame: (id: string) => void;
   patchBookFor: (id: string, key: string, patch: Partial<Book>) => void;
-  repinFrames: (frameIds: readonly string[]) => void;
+  repinFrames: (frameIds: readonly string[], before: ReadonlyMap<string, Place>) => void;
   setProgressFor: (id: string, progress: string) => void;
   removeSession: (id: string) => void;
   openSession: (id: string) => void;
@@ -272,8 +272,10 @@ export const useShelf = create<State>((setState, getState) => ({
     setState({ sessions: next });
     persist(next, currentId);
   },
-  // A read placed better (matched titles, or linked to an earlier read) moves the pins it gave.
-  repinFrames: (frameIds) => {
+  // A read placed better (matched titles, or linked to an earlier read) moves the pins it gave by
+  // as much as it moved. A book a later read saw again carries that read's detections instead, so
+  // the pin cannot be rebuilt from this read's detection.
+  repinFrames: (frameIds, before) => {
     const moved = new Set(frameIds);
     const { sessions, currentId } = getState();
     let changed = false;
@@ -282,10 +284,11 @@ export const useShelf = create<State>((setState, getState) => ({
       let touched = false;
       const books = session.books.map((book) => {
         if (!finitePin(book.pin) || !book.pin.frame || !moved.has(book.pin.frame)) return book;
-        const detection = book.detections.find((item) => item.captureId === book.pin!.frame && item.box) ??
-          book.detections.find((item) => item.captureId === book.pin!.frame);
-        const pin = detection && pinFor(book, detection);
-        if (!pin || (pin.x === book.pin.x && pin.row === book.pin.row && pin.section === book.pin.section)) return book;
+        const from = before.get(book.pin.frame);
+        const to = framePlace(book.pin.frame);
+        if (!from || !to) return book;
+        const pin = clonePin({ ...book.pin, x: book.pin.x + to.x - from.x, row: book.pin.row + to.rowOffset - from.rowOffset, section: to.section });
+        if (!finitePin(pin) || (pin.x === book.pin.x && pin.row === book.pin.row && pin.section === book.pin.section)) return book;
         touched = true;
         return { ...book, pin };
       });
@@ -319,7 +322,7 @@ export const useShelf = create<State>((setState, getState) => ({
   },
 }));
 
-onFramesMoved((frameIds) => useShelf.getState().repinFrames(frameIds));
+onFramesMoved((frameIds, before) => useShelf.getState().repinFrames(frameIds, before));
 
 export function currentSession(state: State) {
   return state.sessions.find((session) => session.id === state.currentId) ?? null;

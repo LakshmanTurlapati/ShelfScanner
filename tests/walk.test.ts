@@ -157,7 +157,10 @@ describe("read places", () => {
     expect(framePlace("b")!.x).toBeCloseTo(0.3);
     expect(framePlace("c")!.x).toBeCloseTo(0.7);
     expect(framePlace("c")!.source).toBe("fixed");
-    expect(moved).toHaveBeenCalledWith(expect.arrayContaining(["b", "c"]));
+    expect(moved).toHaveBeenCalledWith(expect.arrayContaining(["b", "c"]), expect.any(Map));
+    const before = moved.mock.calls[0]![1] as Map<string, { x: number }>;
+    expect(before.get("b")?.x).toBeCloseTo(1);
+    expect(before.get("c")?.x).toBeCloseTo(1.4);
   });
 });
 
@@ -186,6 +189,15 @@ describe("anchorByTitles", () => {
 
   it("does not match a different author's book of the same title", () => {
     const incoming = [seen("Dune", "z", 0.5, 1, "Someone Else Entirely"), seen("Emma", "z", 0.8, 1, "Another Person")];
+    expect(anchorByTitles(stored, incoming, "z", 1)).toBeNull();
+  });
+
+  it("ignores books pinned by reads already linked into this read's group", () => {
+    continueWalk("walk-own");
+    startFrame("a", { x: 1, rowOffset: 0, section: 1 }, "guess");
+    startFrame("z", { x: 1.3, rowOffset: 0, section: 1 }, "guess");
+    joinFrames("z", "a", 0.3);
+    const incoming = [seen("Dune", "z", 0.5, 2), seen("Emma", "z", 0.8, 2)];
     expect(anchorByTitles(stored, incoming, "z", 1)).toBeNull();
   });
 });
@@ -217,6 +229,21 @@ describe("walk session pins", () => {
     const books = useShelf.getState().sessions[0]!.books;
     expect(books.find((item) => item.key === "first")?.pin?.x).toBeCloseTo(0.2);
     expect(books.find((item) => item.key === "second")?.pin?.x).toBeCloseTo(0.1);
+  });
+
+  it("moves the pin of a book a later read saw again along with the read that pinned it", () => {
+    continueWalk("walk-again");
+    const id = useShelf.getState().beginSession(1, "walk-again", "walk");
+    startFrame("f1", { x: 1, rowOffset: 0, section: 1 }, "guess");
+    useShelf.getState().mergeBooksFor(id, [seen("Dune", "f1", 0.5), seen("Emma", "f1", 0.8)]);
+    startFrame("f2", { x: 1.5, rowOffset: 0, section: 1 }, "guess");
+    joinFrames("f2", "f1", 0.5);
+    // f2 sees Dune again: the stored book now carries only f2's detection, but keeps f1's pin.
+    useShelf.getState().mergeBooksFor(id, [seen("Dune", "f2", 0)]);
+    placeFrame("f1", { x: 3, rowOffset: 0, section: 1 }, "titles");
+    const books = useShelf.getState().sessions.find((item) => item.id === id)!.books;
+    expect(books.find((item) => item.key === "dune")?.pin).toMatchObject({ x: expect.closeTo(3.5, 5), frame: "f1" });
+    expect(books.find((item) => item.key === "emma")?.pin).toMatchObject({ x: expect.closeTo(3.8, 5), frame: "f1" });
   });
 
   it("does not keep a book that left a still photo", () => {
